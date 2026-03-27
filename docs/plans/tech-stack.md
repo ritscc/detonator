@@ -35,8 +35,8 @@
 
 【開発ツール】
 - 言語: TypeScript 5.x
-- Linter: ESLint
-- Formatter: Prettier
+- Linter: Biome
+- Formatter: Biome
 - CI/CD: GitHub Actions (lint + typecheck + test)
 ```
 
@@ -84,7 +84,7 @@
 
 - [ ] モノレポ初期化 (pnpm + Turborepo)
 - [ ] TypeScript設定 (共有tsconfig)
-- [ ] ESLint/Prettier設定
+- [ ] Biome 設定
 - [ ] apps/client: Vite + Phaser 3プロジェクト作成
 - [ ] apps/server: Colyseus + Node.js 20プロジェクト作成
 - [ ] packages/protocol: 共有型定義
