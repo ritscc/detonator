@@ -66,7 +66,7 @@
 
 - 複数プレイヤー同期
 - 再接続処理
-- クライアント予測 + サーバー調整
+- サーバー権威型の状態同期（クライアント予測は採用しない）
 - 妥協レベル: **中** (コア機能は妥協なし)
 
 **Phase 3: 体験の洗練**
@@ -75,6 +75,8 @@
 - UI/UXブラッシュアップ
 - バグ修正
 - 妥協レベル: **低** (可能な限り改善)
+
+> **注意**: Phase 2 の旧案にあった「クライアント予測 + サーバー調整」は破棄し、サーバー権威のみを採用する。詳細は `docs/plans/api.md` のプロトコル方針を参照。
 
 ---
 
@@ -87,9 +89,11 @@
 - [ ] Biome 設定
 - [ ] apps/client: Vite + Phaser 3プロジェクト作成
 - [ ] apps/server: Colyseus + Node.js 20プロジェクト作成
-- [ ] packages/protocol: 共有型定義
-- [ ] packages/schema: Colyseusスキーマ
-- [ ] CI/CD: GitHub Actions (lint + typecheck)
+- [ ] packages/protocol: enum / interface / command / event 定義
+- [ ] packages/config: JSON 設定値（game-params, items, skills, stages, rewards）
+- [ ] packages/schema: Colyseus スキーマクラス定義
+- [ ] packages/rules-core: ゲームルール純粋関数群
+- [ ] CI/CD: lint + typecheck + test 追加
 - [ ] 開発環境確認 (localhost動作)
 
 ### 学習リソース
