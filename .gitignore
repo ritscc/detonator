@@ -1,1 +1,41 @@
-.sisyphus/
+# dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# build outputs
+dist/
+build/
+out/
+.next/
+.nuxt/
+
+# turbo
+.turbo/
+
+# test coverage
+coverage/
+
+# env files
+.env
+.env.local
+.env.*.local
+.env.production
+.env.staging
+
+# editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# temp files
+*.tmp
+*.temp

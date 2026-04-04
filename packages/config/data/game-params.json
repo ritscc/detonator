@@ -1,0 +1,89 @@
+{
+	"board": {
+		"sizeFormula": "f(playerCount)",
+		"minWidth": 20,
+		"minHeight": 20,
+		"maxWidth": 40,
+		"maxHeight": 40,
+		"initialSafeZoneWidth": 5,
+		"initialSafeZoneHeight": 5
+	},
+	"mines": {
+		"safeMineRatio": 3,
+		"dangerousMineRatio": 1,
+		"mineDensity": 0.2,
+		"erosionSafeMineRatio": 7,
+		"erosionDangerousMineRatio": 3
+	},
+	"erosion": {
+		"baseIntervalSec": 10,
+		"basePowerCells": 3,
+		"warningFixedDurationSec": 3,
+		"warningIntervalThresholdSec": 4,
+		"warningShortIntervalMultiplier": 0.75,
+		"intervalFormula": "shortenByFloorAndMitigateBySkills",
+		"powerFormula": "increaseByFloor",
+		"takeABreathPauseMs": 5000,
+		"shortBreakPauseMs": 15000
+	},
+	"progression": {
+		"levelExpBase": 100,
+		"levelExpGrowth": 1.3,
+		"comboMultiplierBase": 1,
+		"comboMultiplierPerChain": 0.1
+	},
+	"respawn": {
+		"baseRespawnSec": 40,
+		"shortenDropWeightRatioWhenDeadExists": 0.9,
+		"respawnTimeFormula": "baseModifiedByPlayerCountAndSkills"
+	},
+	"detonate": {
+		"baseCooldownSec": 10,
+		"fuseMs": 3000,
+		"chainIntervalMs": 125,
+		"cooldownFormula": "baseModifiedByPlayerCountAndSkills"
+	},
+	"drop": {
+		"baseDropRate": 0.1,
+		"itemLifetimeMs": 15000,
+		"dropRateFormula": "baseModifiedBySkillsAndRunState"
+	},
+	"checkpoint": {
+		"detectionRadiusCells": 3,
+		"countFormula": "stageBasePlusPlayerAdjustment"
+	},
+	"scoring": {
+		"timeBonusBaseSeconds": 600,
+		"minimumTimeBonusMultiplier": 1,
+		"roundingMode": "round",
+		"formula": "round(max(minimumTimeBonusMultiplier, timeBonusBaseSeconds / clearTimeSeconds) * floorExp)"
+	},
+	"movement": {
+		"baseCellsPerSec": 2,
+		"wastelandSpeedMultiplier": 0.4,
+		"dashSpeedMultiplier": 1.5,
+		"dashDurationMs": 15000
+	},
+	"room": {
+		"reconnectGraceSec": 60,
+		"patchRateHz": 30,
+		"maxPlayers": 10,
+		"seatReservationTimeoutSec": 15
+	},
+	"inventory": {
+		"baseSlots": 3,
+		"maxSlots": 10
+	},
+	"itemEffects": {
+		"catsEyeDurationMs": 10000,
+		"disposableLifeDurationMs": 10000,
+		"mineRemoverRefs": {
+			"cheap": "mine_remover_cheap",
+			"normal": "mine_remover_normal",
+			"high": "mine_remover_high"
+		},
+		"purifyForwardRangeCells": 1,
+		"bridgeTargetCellType": 4,
+		"relayPointPlacementCellType": 0
+	}
+}

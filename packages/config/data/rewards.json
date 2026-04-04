@@ -1,0 +1,40 @@
+{
+	"levelUp": {
+		"optionCount": 3,
+		"allowOfferCarryOver": true,
+		"filterFullInventoryItems": true,
+		"filterStackCappedSkills": true
+	},
+	"itemPool": [
+		{ "kind": "item", "id": "relay_point", "weight": 1 },
+		{ "kind": "item", "id": "dash", "weight": 1 },
+		{ "kind": "item", "id": "force_ignition", "weight": 1, "minFloor": 3 },
+		{ "kind": "item", "id": "mine_remover_cheap", "weight": 1 },
+		{ "kind": "item", "id": "mine_remover_normal", "weight": 1 },
+		{ "kind": "item", "id": "mine_remover_high", "weight": 1, "minFloor": 5 },
+		{ "kind": "item", "id": "cats_eye", "weight": 1 },
+		{ "kind": "item", "id": "evacuation", "weight": 1 },
+		{ "kind": "item", "id": "take_a_breath", "weight": 1 },
+		{ "kind": "item", "id": "short_break", "weight": 1 },
+		{ "kind": "item", "id": "bridge", "weight": 1, "minFloor": 2 },
+		{ "kind": "item", "id": "disposable_life", "weight": 1 },
+		{ "kind": "item", "id": "nine_lives", "weight": 1, "minLevel": 3 },
+		{ "kind": "item", "id": "purify", "weight": 1 }
+	],
+	"skillPool": [
+		{ "kind": "skill", "id": "chord", "weight": 1, "uniquePerRun": true, "minFloor": 5 },
+		{ "kind": "skill", "id": "respawn_time_reduction", "weight": 1 },
+		{ "kind": "skill", "id": "movement_speed_boost", "weight": 1 },
+		{ "kind": "skill", "id": "detonate_cooldown_reduction", "weight": 1, "minLevel": 2 },
+		{ "kind": "skill", "id": "exp_gain_boost", "weight": 1 },
+		{ "kind": "skill", "id": "combo_multiplier_boost", "weight": 1, "minFloor": 3 },
+		{ "kind": "skill", "id": "erosion_cooldown_increase", "weight": 1 },
+		{ "kind": "skill", "id": "item_drop_rate_boost", "weight": 1 },
+		{ "kind": "skill", "id": "item_pickup_range_boost", "weight": 1 },
+		{ "kind": "skill", "id": "item_slot_increase", "weight": 1, "minLevel": 2 },
+		{ "kind": "skill", "id": "cp_detection_range_boost", "weight": 1 },
+		{ "kind": "skill", "id": "erosion_forewarning", "weight": 1, "minFloor": 4 },
+		{ "kind": "skill", "id": "death_item_keep_chance", "weight": 1 },
+		{ "kind": "skill", "id": "wasteland_speed_reduction", "weight": 1 }
+	]
+}

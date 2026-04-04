@@ -1,0 +1,16 @@
+{
+	"extends": "../../tsconfig.base.json",
+	"compilerOptions": {
+		"outDir": "dist",
+		"rootDir": "src",
+		"composite": false,
+		"declaration": true,
+		"declarationMap": true,
+		"experimentalDecorators": true,
+		"useDefineForClassFields": false,
+		"module": "NodeNext",
+		"moduleResolution": "NodeNext",
+		"skipLibCheck": true
+	},
+	"include": ["src"]
+}

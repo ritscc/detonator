@@ -1,0 +1,199 @@
+{
+	"chord": {
+		"skillType": "chord",
+		"displayName": "和音",
+		"rarity": "rare",
+		"uniquePerRun": true,
+		"stackLimit": 1,
+		"effectKind": "rare_global_modifier",
+		"valueRoll": {
+			"min": 1,
+			"max": 1,
+			"unit": "flat",
+			"notes": "取得は 1 ラン 1 回のみ"
+		},
+		"description": "レアスキル。取得後は常時有効。"
+	},
+	"respawn_time_reduction": {
+		"skillType": "respawn_time_reduction",
+		"displayName": "蘇生高速化",
+		"rarity": "common",
+		"uniquePerRun": false,
+		"stackLimit": 0,
+		"effectKind": "respawn_time_reduction",
+		"valueRoll": {
+			"min": 1,
+			"max": 3,
+			"unit": "seconds"
+		},
+		"description": "リスポーン時間を短縮する。"
+	},
+	"movement_speed_boost": {
+		"skillType": "movement_speed_boost",
+		"displayName": "脚力強化",
+		"rarity": "common",
+		"uniquePerRun": false,
+		"stackLimit": 0,
+		"effectKind": "movement_speed_multiplier",
+		"valueRoll": {
+			"min": 2,
+			"max": 6,
+			"unit": "percent"
+		},
+		"description": "移動速度を上昇させる。"
+	},
+	"detonate_cooldown_reduction": {
+		"skillType": "detonate_cooldown_reduction",
+		"displayName": "点火短縮",
+		"rarity": "common",
+		"uniquePerRun": false,
+		"stackLimit": 0,
+		"effectKind": "detonate_cooldown_reduction",
+		"valueRoll": {
+			"min": 0.5,
+			"max": 1,
+			"unit": "seconds"
+		},
+		"description": "Detonate CT を短縮する。"
+	},
+	"exp_gain_boost": {
+		"skillType": "exp_gain_boost",
+		"displayName": "経験値増幅",
+		"rarity": "common",
+		"uniquePerRun": false,
+		"stackLimit": 0,
+		"effectKind": "exp_gain_multiplier",
+		"valueRoll": {
+			"min": 5,
+			"max": 20,
+			"unit": "percent"
+		},
+		"description": "経験値獲得量を増やす。"
+	},
+	"combo_multiplier_boost": {
+		"skillType": "combo_multiplier_boost",
+		"displayName": "コンボ強化",
+		"rarity": "common",
+		"uniquePerRun": false,
+		"stackLimit": 0,
+		"effectKind": "combo_multiplier_bonus",
+		"valueRoll": {
+			"min": 0.05,
+			"max": 0.2,
+			"unit": "multiplier"
+		},
+		"description": "Detonate コンボ倍率を増やす。"
+	},
+	"erosion_cooldown_increase": {
+		"skillType": "erosion_cooldown_increase",
+		"displayName": "侵食遅延",
+		"rarity": "common",
+		"uniquePerRun": false,
+		"stackLimit": 0,
+		"effectKind": "erosion_interval_extension",
+		"valueRoll": {
+			"min": 5,
+			"max": 10,
+			"unit": "percent"
+		},
+		"description": "侵食インターバルを延長する。"
+	},
+	"item_drop_rate_boost": {
+		"skillType": "item_drop_rate_boost",
+		"displayName": "ドロップ強化",
+		"rarity": "common",
+		"uniquePerRun": false,
+		"stackLimit": 0,
+		"effectKind": "drop_rate_bonus",
+		"valueRoll": {
+			"min": 2,
+			"max": 4,
+			"unit": "percent"
+		},
+		"description": "アイテムドロップ率を上げる。"
+	},
+	"item_pickup_range_boost": {
+		"skillType": "item_pickup_range_boost",
+		"displayName": "吸着範囲強化",
+		"rarity": "common",
+		"uniquePerRun": false,
+		"stackLimit": 0,
+		"effectKind": "pickup_radius_bonus",
+		"valueRoll": {
+			"min": 0.2,
+			"max": 0.5,
+			"unit": "cells"
+		},
+		"description": "地上アイテムの自動取得半径を広げる。"
+	},
+	"item_slot_increase": {
+		"skillType": "item_slot_increase",
+		"displayName": "所持枠拡張",
+		"rarity": "common",
+		"uniquePerRun": false,
+		"stackLimit": 7,
+		"effectKind": "inventory_slot_bonus",
+		"valueRoll": {
+			"min": 1,
+			"max": 1,
+			"unit": "flat"
+		},
+		"description": "インベントリ所持枠を +1 する。"
+	},
+	"cp_detection_range_boost": {
+		"skillType": "cp_detection_range_boost",
+		"displayName": "CP 感知拡張",
+		"rarity": "common",
+		"uniquePerRun": false,
+		"stackLimit": 0,
+		"effectKind": "cp_detection_radius_bonus",
+		"valueRoll": {
+			"min": 0.5,
+			"max": 0.5,
+			"unit": "cells"
+		},
+		"description": "CP 検知範囲を拡張する。"
+	},
+	"erosion_forewarning": {
+		"skillType": "erosion_forewarning",
+		"displayName": "侵食予知",
+		"rarity": "common",
+		"uniquePerRun": false,
+		"stackLimit": 0,
+		"effectKind": "erosion_warning_bonus",
+		"valueRoll": {
+			"min": 0.5,
+			"max": 0.5,
+			"unit": "seconds"
+		},
+		"description": "侵食警告表示を早める。"
+	},
+	"death_item_keep_chance": {
+		"skillType": "death_item_keep_chance",
+		"displayName": "遺失物保持",
+		"rarity": "common",
+		"uniquePerRun": false,
+		"stackLimit": 0,
+		"effectKind": "death_item_keep_chance",
+		"valueRoll": {
+			"min": 5,
+			"max": 5,
+			"unit": "percent"
+		},
+		"description": "死亡時のアイテム保持確率を上げる。"
+	},
+	"wasteland_speed_reduction": {
+		"skillType": "wasteland_speed_reduction",
+		"displayName": "荒地適応",
+		"rarity": "common",
+		"uniquePerRun": false,
+		"stackLimit": 0,
+		"effectKind": "wasteland_penalty_reduction",
+		"valueRoll": {
+			"min": 2,
+			"max": 5,
+			"unit": "percent"
+		},
+		"description": "荒地移動速度ペナルティを軽減する。"
+	}
+}

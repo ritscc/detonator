@@ -1,0 +1,346 @@
+{
+	"floors": [
+		{
+			"floorNumber": 1,
+			"stageId": "floor01_intro",
+			"displayName": "Floor 1"
+		},
+		{
+			"floorNumber": 2,
+			"stageId": "floor02_cross",
+			"displayName": "Floor 2"
+		},
+		{
+			"floorNumber": 3,
+			"stageId": "floor03_split",
+			"displayName": "Floor 3"
+		},
+		{
+			"floorNumber": 4,
+			"stageId": "floor04_ring",
+			"displayName": "Floor 4"
+		},
+		{
+			"floorNumber": 5,
+			"stageId": "floor05_bridge",
+			"displayName": "Floor 5"
+		},
+		{
+			"floorNumber": 6,
+			"stageId": "floor06_pockets",
+			"displayName": "Floor 6"
+		},
+		{
+			"floorNumber": 7,
+			"stageId": "floor07_wide",
+			"displayName": "Floor 7"
+		},
+		{
+			"floorNumber": 8,
+			"stageId": "floor08_labyrinth",
+			"displayName": "Floor 8"
+		},
+		{
+			"floorNumber": 9,
+			"stageId": "floor09_pressure",
+			"displayName": "Floor 9"
+		},
+		{
+			"floorNumber": 10,
+			"stageId": "floor10_finale",
+			"displayName": "Floor 10"
+		}
+	],
+	"stages": {
+		"floor01_intro": {
+			"stageId": "floor01_intro",
+			"displayName": "Intro Grid",
+			"boardProfile": {
+				"sizeRuleRef": "board.sizeFormula",
+				"cpCountFormulaRef": "checkpoint.countFormula",
+				"erosionFrontlineWidthCap": 4
+			},
+			"holeCoords": [
+				{ "x": 15, "y": 10 },
+				{ "x": 16, "y": 10 }
+			],
+			"cpCandidateCoords": [
+				{ "x": 8, "y": 3 },
+				{ "x": 3, "y": 8 },
+				{ "x": 12, "y": 14 }
+			],
+			"spawnGroups": [
+				{
+					"groupId": "g1",
+					"coords": [
+						{ "x": 2, "y": 2 },
+						{ "x": 3, "y": 2 }
+					]
+				},
+				{
+					"groupId": "g2",
+					"coords": [
+						{ "x": 2, "y": 3 },
+						{ "x": 3, "y": 3 },
+						{ "x": 4, "y": 3 }
+					]
+				}
+			],
+			"notes": "MVP では floor ごとに stage 1 件固定。各 stage は Hole, CP 候補, spawn groups を authoring する。"
+		},
+		"floor02_cross": {
+			"stageId": "floor02_cross",
+			"displayName": "Cross",
+			"boardProfile": {
+				"sizeRuleRef": "board.sizeFormula",
+				"cpCountFormulaRef": "checkpoint.countFormula"
+			},
+			"holeCoords": [
+				{ "x": 10, "y": 10 }
+			],
+			"cpCandidateCoords": [
+				{ "x": 5, "y": 5 },
+				{ "x": 14, "y": 5 },
+				{ "x": 10, "y": 15 }
+			],
+			"spawnGroups": [
+				{
+					"groupId": "g1",
+					"coords": [
+						{ "x": 2, "y": 9 },
+						{ "x": 2, "y": 10 },
+						{ "x": 2, "y": 11 }
+					]
+				}
+			]
+		},
+		"floor03_split": {
+			"stageId": "floor03_split",
+			"displayName": "Split",
+			"boardProfile": {
+				"sizeRuleRef": "board.sizeFormula",
+				"cpCountFormulaRef": "checkpoint.countFormula"
+			},
+			"holeCoords": [
+				{ "x": 9, "y": 9 },
+				{ "x": 10, "y": 9 }
+			],
+			"cpCandidateCoords": [
+				{ "x": 4, "y": 4 },
+				{ "x": 15, "y": 4 },
+				{ "x": 10, "y": 15 }
+			],
+			"spawnGroups": [
+				{
+					"groupId": "g1",
+					"coords": [
+						{ "x": 3, "y": 2 },
+						{ "x": 4, "y": 2 }
+					]
+				}
+			]
+		},
+		"floor04_ring": {
+			"stageId": "floor04_ring",
+			"displayName": "Ring",
+			"boardProfile": {
+				"sizeRuleRef": "board.sizeFormula",
+				"cpCountFormulaRef": "checkpoint.countFormula",
+				"erosionFrontlineWidthCap": 5
+			},
+			"holeCoords": [
+				{ "x": 7, "y": 7 },
+				{ "x": 12, "y": 12 }
+			],
+			"cpCandidateCoords": [
+				{ "x": 5, "y": 10 },
+				{ "x": 10, "y": 5 },
+				{ "x": 15, "y": 10 }
+			],
+			"spawnGroups": [
+				{
+					"groupId": "g1",
+					"coords": [
+						{ "x": 2, "y": 2 },
+						{ "x": 2, "y": 3 },
+						{ "x": 3, "y": 2 }
+					]
+				}
+			]
+		},
+		"floor05_bridge": {
+			"stageId": "floor05_bridge",
+			"displayName": "Bridge",
+			"boardProfile": {
+				"sizeRuleRef": "board.sizeFormula",
+				"cpCountFormulaRef": "checkpoint.countFormula"
+			},
+			"holeCoords": [
+				{ "x": 9, "y": 10 },
+				{ "x": 10, "y": 10 },
+				{ "x": 11, "y": 10 }
+			],
+			"cpCandidateCoords": [
+				{ "x": 6, "y": 6 },
+				{ "x": 13, "y": 6 },
+				{ "x": 10, "y": 14 }
+			],
+			"spawnGroups": [
+				{
+					"groupId": "g1",
+					"coords": [
+						{ "x": 2, "y": 10 },
+						{ "x": 3, "y": 10 },
+						{ "x": 4, "y": 10 }
+					]
+				}
+			]
+		},
+		"floor06_pockets": {
+			"stageId": "floor06_pockets",
+			"displayName": "Pockets",
+			"boardProfile": {
+				"sizeRuleRef": "board.sizeFormula",
+				"cpCountFormulaRef": "checkpoint.countFormula"
+			},
+			"holeCoords": [
+				{ "x": 6, "y": 8 },
+				{ "x": 13, "y": 11 }
+			],
+			"cpCandidateCoords": [
+				{ "x": 4, "y": 12 },
+				{ "x": 10, "y": 6 },
+				{ "x": 16, "y": 12 }
+			],
+			"spawnGroups": [
+				{
+					"groupId": "g1",
+					"coords": [
+						{ "x": 3, "y": 3 },
+						{ "x": 4, "y": 3 }
+					]
+				}
+			]
+		},
+		"floor07_wide": {
+			"stageId": "floor07_wide",
+			"displayName": "Wide",
+			"boardProfile": {
+				"sizeRuleRef": "board.sizeFormula",
+				"cpCountFormulaRef": "checkpoint.countFormula",
+				"erosionFrontlineWidthCap": 6
+			},
+			"holeCoords": [
+				{ "x": 8, "y": 9 }
+			],
+			"cpCandidateCoords": [
+				{ "x": 5, "y": 5 },
+				{ "x": 10, "y": 10 },
+				{ "x": 15, "y": 15 }
+			],
+			"spawnGroups": [
+				{
+					"groupId": "g1",
+					"coords": [
+						{ "x": 2, "y": 4 },
+						{ "x": 2, "y": 5 },
+						{ "x": 3, "y": 4 }
+					]
+				}
+			]
+		},
+		"floor08_labyrinth": {
+			"stageId": "floor08_labyrinth",
+			"displayName": "Labyrinth",
+			"boardProfile": {
+				"sizeRuleRef": "board.sizeFormula",
+				"cpCountFormulaRef": "checkpoint.countFormula"
+			},
+			"holeCoords": [
+				{ "x": 11, "y": 8 },
+				{ "x": 11, "y": 9 },
+				{ "x": 11, "y": 10 }
+			],
+			"cpCandidateCoords": [
+				{ "x": 6, "y": 4 },
+				{ "x": 14, "y": 8 },
+				{ "x": 6, "y": 14 }
+			],
+			"spawnGroups": [
+				{
+					"groupId": "g1",
+					"coords": [
+						{ "x": 2, "y": 2 },
+						{ "x": 3, "y": 2 }
+					]
+				}
+			]
+		},
+		"floor09_pressure": {
+			"stageId": "floor09_pressure",
+			"displayName": "Pressure",
+			"boardProfile": {
+				"sizeRuleRef": "board.sizeFormula",
+				"cpCountFormulaRef": "checkpoint.countFormula",
+				"erosionFrontlineWidthCap": 5
+			},
+			"holeCoords": [
+				{ "x": 9, "y": 8 },
+				{ "x": 10, "y": 8 },
+				{ "x": 11, "y": 8 }
+			],
+			"cpCandidateCoords": [
+				{ "x": 5, "y": 6 },
+				{ "x": 15, "y": 6 },
+				{ "x": 10, "y": 14 }
+			],
+			"spawnGroups": [
+				{
+					"groupId": "g1",
+					"coords": [
+						{ "x": 3, "y": 15 },
+						{ "x": 4, "y": 15 },
+						{ "x": 5, "y": 15 }
+					]
+				}
+			]
+		},
+		"floor10_finale": {
+			"stageId": "floor10_finale",
+			"displayName": "Finale",
+			"boardProfile": {
+				"sizeRuleRef": "board.sizeFormula",
+				"cpCountFormulaRef": "checkpoint.countFormula",
+				"erosionFrontlineWidthCap": 6
+			},
+			"holeCoords": [
+				{ "x": 8, "y": 10 },
+				{ "x": 12, "y": 10 }
+			],
+			"cpCandidateCoords": [
+				{ "x": 4, "y": 5 },
+				{ "x": 10, "y": 4 },
+				{ "x": 16, "y": 5 },
+				{ "x": 10, "y": 15 }
+			],
+			"spawnGroups": [
+				{
+					"groupId": "g1",
+					"coords": [
+						{ "x": 2, "y": 9 },
+						{ "x": 2, "y": 10 },
+						{ "x": 2, "y": 11 }
+					]
+				},
+				{
+					"groupId": "g2",
+					"coords": [
+						{ "x": 17, "y": 9 },
+						{ "x": 17, "y": 10 },
+						{ "x": 17, "y": 11 }
+					]
+				}
+			]
+		}
+	}
+}

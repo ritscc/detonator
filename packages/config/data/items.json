@@ -1,0 +1,237 @@
+{
+	"relay_point": {
+		"itemType": "relay_point",
+		"displayName": "中継地点",
+		"manualUse": true,
+		"autoTriggerOnDeath": false,
+		"stackable": true,
+		"maxStack": 99,
+		"targeting": {
+			"mode": "grid_coord_required",
+			"usesFacingCorrection": false,
+			"requiresLineOfSight": false
+		},
+		"allowedTargetCellTypes": [0],
+		"effectKind": "relay_point_place",
+		"description": "Safe セルに Relay Point を設置し、MST 中継ノード兼 detonate 始点を追加する。"
+	},
+	"dash": {
+		"itemType": "dash",
+		"displayName": "ダッシュ",
+		"manualUse": true,
+		"autoTriggerOnDeath": false,
+		"stackable": true,
+		"maxStack": 99,
+		"targeting": {
+			"mode": "self",
+			"usesFacingCorrection": false,
+			"requiresLineOfSight": false
+		},
+		"allowedTargetCellTypes": [],
+		"effectKind": "dash_buff",
+		"durationMs": 15000,
+		"description": "15 秒間、移動速度を 1.5 倍にする。"
+	},
+	"force_ignition": {
+		"itemType": "force_ignition",
+		"displayName": "強制点火",
+		"manualUse": true,
+		"autoTriggerOnDeath": false,
+		"stackable": true,
+		"maxStack": 99,
+		"targeting": {
+			"mode": "self",
+			"usesFacingCorrection": false,
+			"requiresLineOfSight": false
+		},
+		"allowedTargetCellTypes": [],
+		"effectKind": "force_ignition_arm",
+		"description": "次回 detonate の CT を 1 回だけ無視する。"
+	},
+	"mine_remover_cheap": {
+		"itemType": "mine_remover_cheap",
+		"displayName": "地雷除去機（安い）",
+		"manualUse": true,
+		"autoTriggerOnDeath": false,
+		"stackable": true,
+		"maxStack": 99,
+		"targeting": {
+			"mode": "grid_coord_optional",
+			"usesFacingCorrection": true,
+			"requiresLineOfSight": false
+		},
+		"allowedTargetCellTypes": [1, 2],
+		"effectKind": "mine_remover",
+		"effectRef": "cheap",
+		"description": "Facing 4 方向補正後の前方地雷原を Safe 化する（安価版）。"
+	},
+	"mine_remover_normal": {
+		"itemType": "mine_remover_normal",
+		"displayName": "地雷除去機（普通）",
+		"manualUse": true,
+		"autoTriggerOnDeath": false,
+		"stackable": true,
+		"maxStack": 99,
+		"targeting": {
+			"mode": "grid_coord_optional",
+			"usesFacingCorrection": true,
+			"requiresLineOfSight": false
+		},
+		"allowedTargetCellTypes": [1, 2],
+		"effectKind": "mine_remover",
+		"effectRef": "normal",
+		"description": "Facing 4 方向補正後の前方地雷原を Safe 化する（通常版）。"
+	},
+	"mine_remover_high": {
+		"itemType": "mine_remover_high",
+		"displayName": "地雷除去機（高い）",
+		"manualUse": true,
+		"autoTriggerOnDeath": false,
+		"stackable": true,
+		"maxStack": 99,
+		"targeting": {
+			"mode": "grid_coord_optional",
+			"usesFacingCorrection": true,
+			"requiresLineOfSight": false
+		},
+		"allowedTargetCellTypes": [1, 2],
+		"effectKind": "mine_remover",
+		"effectRef": "high",
+		"description": "Facing 4 方向補正後の前方地雷原を Safe 化する（高価版）。"
+	},
+	"cats_eye": {
+		"itemType": "cats_eye",
+		"displayName": "キャッツアイ",
+		"manualUse": true,
+		"autoTriggerOnDeath": false,
+		"stackable": true,
+		"maxStack": 99,
+		"targeting": {
+			"mode": "self",
+			"usesFacingCorrection": false,
+			"requiresLineOfSight": false
+		},
+		"allowedTargetCellTypes": [],
+		"effectKind": "cats_eye_reveal",
+		"durationMs": 10000,
+		"description": "全未回収 CP を一時的にチーム全体へ共有表示する。"
+	},
+	"evacuation": {
+		"itemType": "evacuation",
+		"displayName": "緊急脱出",
+		"manualUse": true,
+		"autoTriggerOnDeath": false,
+		"stackable": true,
+		"maxStack": 99,
+		"targeting": {
+			"mode": "self",
+			"usesFacingCorrection": false,
+			"requiresLineOfSight": false
+		},
+		"allowedTargetCellTypes": [],
+		"effectKind": "teleport_to_respawn",
+		"description": "現在のリスポーン地点へ瞬間移動する。"
+	},
+	"take_a_breath": {
+		"itemType": "take_a_breath",
+		"displayName": "一息",
+		"manualUse": true,
+		"autoTriggerOnDeath": false,
+		"stackable": true,
+		"maxStack": 99,
+		"targeting": {
+			"mode": "self",
+			"usesFacingCorrection": false,
+			"requiresLineOfSight": false
+		},
+		"allowedTargetCellTypes": [],
+		"effectKind": "erosion_pause",
+		"durationMs": 5000,
+		"effectRef": "takeABreathPauseMs",
+		"description": "侵食を短時間停止する。"
+	},
+	"short_break": {
+		"itemType": "short_break",
+		"displayName": "休憩",
+		"manualUse": true,
+		"autoTriggerOnDeath": false,
+		"stackable": true,
+		"maxStack": 99,
+		"targeting": {
+			"mode": "self",
+			"usesFacingCorrection": false,
+			"requiresLineOfSight": false
+		},
+		"allowedTargetCellTypes": [],
+		"effectKind": "erosion_pause",
+		"durationMs": 15000,
+		"effectRef": "shortBreakPauseMs",
+		"description": "侵食を長時間停止する。"
+	},
+	"bridge": {
+		"itemType": "bridge",
+		"displayName": "ブリッジ",
+		"manualUse": true,
+		"autoTriggerOnDeath": false,
+		"stackable": true,
+		"maxStack": 99,
+		"targeting": {
+			"mode": "grid_coord_required",
+			"usesFacingCorrection": false,
+			"requiresLineOfSight": false
+		},
+		"allowedTargetCellTypes": [4],
+		"effectKind": "bridge_place",
+		"description": "指定 Hole セルを Safe 化する。"
+	},
+	"disposable_life": {
+		"itemType": "disposable_life",
+		"displayName": "使い捨て命",
+		"manualUse": true,
+		"autoTriggerOnDeath": true,
+		"stackable": true,
+		"maxStack": 99,
+		"targeting": {
+			"mode": "self",
+			"usesFacingCorrection": false,
+			"requiresLineOfSight": false
+		},
+		"allowedTargetCellTypes": [],
+		"effectKind": "death_avoidance_buff",
+		"durationMs": 10000,
+		"description": "手動使用で一定時間バフを付与し、その間の死亡判定 1 回を回避する。"
+	},
+	"nine_lives": {
+		"itemType": "nine_lives",
+		"displayName": "九死に一生",
+		"manualUse": false,
+		"autoTriggerOnDeath": true,
+		"stackable": true,
+		"maxStack": 99,
+		"targeting": {
+			"mode": "none",
+			"usesFacingCorrection": false,
+			"requiresLineOfSight": false
+		},
+		"allowedTargetCellTypes": [],
+		"effectKind": "death_avoidance_stock",
+		"description": "手動使用なし。死亡判定時に自動消費して死亡を回避する。"
+	},
+	"purify": {
+		"itemType": "purify",
+		"displayName": "除染",
+		"manualUse": true,
+		"autoTriggerOnDeath": false,
+		"stackable": true,
+		"maxStack": 99,
+		"targeting": {
+			"mode": "grid_coord_optional",
+			"usesFacingCorrection": true,
+			"requiresLineOfSight": false
+		},
+		"allowedTargetCellTypes": [3],
+		"effectKind": "purify_wasteland",
+		"effectRef": "purifyForwardRangeCells",
+		"description": "Facing 4 方向補正後の前方 1 マスの Wasteland を Safe 化する。"
+	}
+}

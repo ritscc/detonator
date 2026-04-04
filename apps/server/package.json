@@ -1,0 +1,16 @@
+{
+	"name": "@detonator/server",
+	"version": "0.0.0",
+	"private": true,
+	"type": "module",
+	"scripts": {
+		"dev": "tsx watch src/index.ts",
+		"build": "tsup src/index.ts --format esm --dts",
+		"typecheck": "tsc -p tsconfig.json --noEmit",
+		"test": "vitest run"
+	},
+	"devDependencies": {
+		"tsup": "^8.3.5",
+		"tsx": "^4.19.2"
+	}
+}
