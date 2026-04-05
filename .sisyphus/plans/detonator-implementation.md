@@ -11,8 +11,9 @@
 > - apps/client (Phaser 3 + Vite 5) — スマホファースト UI
 > 
 > **Estimated Effort**: XL
-> **Parallel Execution**: YES - 16 waves
-> **Critical Path**: Task 1 → Task 2 → Task 3 → Task 4 → Task 8 → Task 9 → Task 14 → Task 18 → Task 25 → Task 32 → Task 38 → FINAL
+> **Parallel Execution**: YES - 16 waves (revised 2026-04-05 per Phase B Test Design Guide audit)
+> **Critical Path** (revised, based on actual Blocked By fields): T2 → T3 → T7 → T8 → T10 → T13 → T15 → T18 → T20 → T23 → T24 → T31 → T32 → T42 → F1-F4
+> **Oracle Policy** (Decision #7): api.md + detonator.md = absolute authority ONLY. Plan pseudo-code = examples only. be-dev-plan / fe-dev-plan = architecture reference only.
 
 ---
 
@@ -111,6 +112,20 @@ Evidence saved to `.sisyphus/evidence/task-{N}-{scenario-slug}.{ext}`.
 
 ### Parallel Execution Waves
 
+> **📝 2026-04-05 修正**: Phase B Test Design Guide 監査結果に基づき Wave 構成を最適化。
+> - T19 を Wave 8 に移動 (T1-14 のみに依存)
+> - T27/T28/T30 を Wave 11 に移動可能 (Wave 10 出力のみに依存)
+> - T34/T35/T39 を Wave 12-13 に前方移動
+> - T36 を Wave 13 に前方移動
+> - T41 を Wave 14 に前方移動
+> - **T43 を独立 Wave 16 に分離** (T40/T41 に依存するため Wave 15 並列不可)
+> - Critical Path を actual Blocked By に修正
+> - 依存関係欠落 D1-D7 を各 Task に追記
+>
+> **⚠️ Oracle Policy (Decision #7)**: 以下の Wave 記述は開発順序と機能方針のみを示す。
+> 各 Task の「References」に記載の be-dev-plan / fe-dev-plan セクション番号はアーキテクチャ理解の補助に過ぎず、
+> テスト assertion の権威は `docs/plans/api.md` と `docs/plans/detonator.md` のみが持つ。
+
 ```
 Wave 1 (Start Immediately — foundation):
 ├── Task 1: Monorepo setup + CI [quick]
@@ -143,47 +158,47 @@ Wave 7 (After Wave 6 — rules-core lifecycle/reward):
 Wave 8 (After Wave 7 — integration + app foundations):
 ├── Task 15: Shared package integration review [unspecified-high]
 ├── Task 16: apps/server — foundation [unspecified-high]
-└── Task 17: CI/CD — lint + typecheck + test pipeline [quick]
+├── Task 17: CI/CD — lint + typecheck + test pipeline [quick]
+└── Task 19: apps/client — foundation + scenes + connection [visual-engineering] ← from Wave 9
 
-Wave 9 (After Wave 8 — room lifecycle + client foundation):
-├── Task 18: Server — LobbyRoom + DetonatorRoom shell + floor bootstrap [deep]
-└── Task 19: apps/client — foundation + scenes + connection [visual-engineering]
+Wave 9 (After Wave 8 — room lifecycle):
+└── Task 18: Server — LobbyRoom + DetonatorRoom shell + floor bootstrap [deep]
 
 Wave 10 (After Wave 9 — commands + client binding):
 ├── Task 20: Server — JoinService + ReconnectService + command registration [unspecified-high]
 ├── Task 21: Server — MovementSystem + move/dig/flag handlers [unspecified-high]
 └── Task 22: Client — schema binding + selectors + private state store [unspecified-high]
 
-Wave 11 (After Wave 10 — inventory + rendering):
+Wave 11 (After Wave 10 — inventory + rendering + partial gameplay):
 ├── Task 23: Server — InventoryService + DropService + ExpService [unspecified-high]
 ├── Task 25: Client — board rendering (GridLayer + NumberTextLayer + Camera) [visual-engineering]
-└── Task 26: Client — PlayerLayer + input (Keyboard + Joystick + ActionButtons) [visual-engineering]
+├── Task 26: Client — PlayerLayer + input (Keyboard + Joystick + ActionButtons) [visual-engineering]
+├── Task 27: Server — DetonateService + UnmanagedExplosionService [deep] ← from Wave 12
+├── Task 28: Server — ErosionService [deep] ← from Wave 12
+└── Task 30: Client — HUD (PlayerHud + ExpBar + ScorePanel + Inventory) [visual-engineering] ← from Wave 12
 
-Wave 12 (After Wave 11 — death + checkpoint + explosion + HUD):
+Wave 12 (After Wave 11 — death + checkpoint + client FX):
 ├── Task 24: Server — DeathService (entry + avoidance) + CheckpointService [deep]
-├── Task 27: Server — DetonateService + UnmanagedExplosionService [deep]
-├── Task 28: Server — ErosionService [deep]
 ├── Task 29: Client — inputMapper + CommandDispatcher + facingResolver [unspecified-high]
-└── Task 30: Client — HUD (PlayerHud + ExpBar + ScorePanel + Inventory) [visual-engineering]
+├── Task 34: Client — CpLayer + visibility + GroundItemLayer [visual-engineering] ← from Wave 13
+└── Task 35: Client — FX (Detonate + Unmanaged + Erosion + ScreenFx) [visual-engineering] ← from Wave 13
 
-Wave 13 (After Wave 12 — respawn + floor + FX):
+Wave 13 (After Wave 12 — respawn + reward + item effects + UI):
 ├── Task 31: Server — RespawnService + DeathService completion [unspecified-high]
-├── Task 33: Server — RewardService + SkillService [unspecified-high]
-├── Task 34: Client — CpLayer + visibility + GroundItemLayer [visual-engineering]
-└── Task 35: Client — FX (Detonate + Unmanaged + Erosion + ScreenFx) [visual-engineering]
-
-Wave 14 (After Wave 13 — floor transition + item effects + multiplayer UI):
 ├── Task 32: Server — FloorTransitionService + ScoreService [deep]
-├── Task 36: Server — 13 use_item effects + use_item completion [deep]
+├── Task 33: Server — RewardService + SkillService [unspecified-high]
+├── Task 36: Server — 13 use_item effects + use_item completion [deep] ← from Wave 14
+├── Task 39: Client — RewardOfferPanel + TargetingOverlay + NotificationToast [visual-engineering] ← from Wave 14
+└── Task 41: Client — Audio (SFX + BGM + AudioUnlock) [visual-engineering] ← from Wave 15
+
+Wave 14 (After Wave 13 — floor transition + claim/discard + reconnect + scenes):
 ├── Task 37: Server — claim_reward + discard_item completion [unspecified-high]
 ├── Task 38: Server — mid-game join + reconnect completion [unspecified-high]
-└── Task 39: Client — RewardOfferPanel + TargetingOverlay + NotificationToast [visual-engineering]
+└── Task 40: Client — Lobby + Rest + GameOver scenes + MultiplayerNotice [visual-engineering]
 
-Wave 15 (After Wave 14 — scenes + audio + integration):
-├── Task 40: Client — Lobby + Rest + GameOver scenes + MultiplayerNotice [visual-engineering]
-├── Task 41: Client — Audio (SFX + BGM + AudioUnlock) [visual-engineering]
+Wave 15 (After Wave 14 — integration tests):
 ├── Task 42: Server — integration tests [deep]
-└── Task 43: Client — integration + flow testing [deep]
+└── Task 43: Client — integration + flow testing [deep] ⚠️ T40/T41 完了後実行可
 
 Wave FINAL (After ALL tasks — independent review, 4 parallel):
 ├── Task F1: Plan compliance audit (oracle)
@@ -191,9 +206,9 @@ Wave FINAL (After ALL tasks — independent review, 4 parallel):
 ├── Task F3: Real manual QA (unspecified-high)
 └── Task F4: Scope fidelity check (deep)
 
-Critical Path: T1 → T2 → T3 → T7 → T8 → T10 → T13 → T14 → T16 → T18 → T21 → T23 → T24 → T27 → T32 → T36 → T37 → T38 → T40 → F1-F4
+Critical Path (revised): T2 → T3 → T7 → T8 → T10 → T13 → T15 → T18 → T20 → T23 → T24 → T31 → T32 → T42 → F1-F4
 Parallel Speedup: ~65% faster than sequential
-Max Concurrent: 6 (Waves 12, 14)
+Max Concurrent: 6 (Waves 11, 13)
 ```
 
 ### Agent Dispatch Summary
@@ -894,81 +909,8 @@ Max Concurrent: 6 (Waves 12, 14)
 
   **Must NOT do**:
   - unmanaged explosion のロジックを混ぜない (別パイプライン)
-  - server の EventQueue / schema 更新を参照しない (純粋関数)
-  - fuse timer / cooldown の管理ロジックを入れない
-
-  **Recommended Agent Profile**:
-  - **Category**: `deep`
-    - Reason: Rooted Prim-MST アルゴリズム + 連鎖 chain 処理の複雑なゲームロジック
-  - **Skills**: []
-  - **Skills Evaluated but Omitted**:
-    - `git-master`: コミットは最後
-
-  **Parallelization**:
-  - **Can Run In Parallel**: YES (Wave 6)
-  - **Parallel Group**: Wave 6 (with Tasks 11, 12)
-  - **Blocks**: Tasks 13, 14, 16-43
-  - **Blocked By**: Tasks 7, 8, 9
-
-  **References**:
-
-  **Pattern References**:
-  - `docs/plans/shared-dev-plan.md:1811-1842` — §7.5.4 buildDetonatePreview / resolveDetonateChain の完全なシグネチャ
-  - `docs/plans/back/be-dev-plan.md:363-376` — §5.4.1 Detonate 爆発評価アルゴリズム詳細 (3.0s fuse, Rooted Prim-MST, 125ms chain, タイブレーク)
-
-  **WHY Each Reference Matters**:
-  - §7.5.4 には入出力型が完全に定義されており、chainSteps の返り型 (atOffsetMs, coord, cellTypeBefore, wasRelayPoint, remainingPath) が server が event を生成するための契約となる
-  - be-dev-plan §5.4.1 にはアルゴリズムの詳細手順 (MST 再計算タイミング、連鎖停止条件、同 tick 複数 due 処理) が記載されており、実装の正確性を担保する
-
-  **Acceptance Criteria**:
-
-  **TDD Tests:**
-  - [ ] Test: buildDetonatePreview が正しい provisional path を返す (3x3 grid で deterministic)
-  - [ ] Test: resolveDetonateChain が DangerousMine で連鎖継続、SafeMine で停止
-  - [ ] Test: resolveDetonateChain が RelayPoint を中継ノードとして扱い子へ伝播
-  - [ ] Test: タイブレーク規則 (y * width + x 昇順) が正しく適用される
-  - [ ] Test: 旗/RelayPoint が連鎖経路上で除去される
-  - [ ] Test: 同一 seed で同一結果 (deterministic)
-  - [ ] `pnpm --filter @detonator/rules-core test` → PASS
-
-  **QA Scenarios (MANDATORY):**
-
-  ```
-  Scenario: Detonate chain with relay points and safe mines
-    Tool: Bash (vitest)
-    Preconditions: Tasks 1-9 complete
-    Steps:
-      1. pnpm --filter @detonator/rules-core test -- -t "detonate"
-      2. Verify chain stops at SafeMine, continues through RelayPoint
-    Expected Result: All detonate tests pass
-    Failure Indicators: Wrong chain order, missing relay propagation
-    Evidence: .sisyphus/evidence/task-10-detonate-chain.log
-
-  Scenario: Detonate tie-break determinism
-    Tool: Bash (vitest)
-    Preconditions: Tasks 1-9 complete
-    Steps:
-      1. pnpm --filter @detonator/rules-core test -- -t "tiebreak"
-    Expected Result: Same seed always produces same order
-    Failure Indicators: Non-deterministic ordering
-    Evidence: .sisyphus/evidence/task-10-detonate-tiebreak.log
-  ```
-
-  **Commit**: YES
-  - Message: `feat(rules-core): detonate preview and chain resolution`
-  - Files: `packages/rules-core/src/detonate/*.ts`, `packages/rules-core/test/detonate.test.ts`
-  - Pre-commit: `pnpm --filter @detonator/rules-core test`
-
-- [ ] 11. packages/rules-core — explosion (unmanaged)
-
-  **What to do**:
-  - `src/explosion/trigger-unmanaged.ts`: triggerUnmanagedExplosion — 誤掘り起点の即時爆発、衝撃波 (blastCoords) + 荒地化 (wastelandCoords) 適用、BFS 連鎖エントリ生成 — shared-dev-plan §7.5.5
-  - `src/explosion/resolve-unmanaged-chain.ts`: resolveUnmanagedChainStep — BFS 1 ステップ処理、blast/wasteland 適用、次段 dangerous coords 返却 — shared-dev-plan §7.5.5
-  - `test/unmanaged-explosion.test.ts`: 衝撃波範囲、荒地化、BFS 連鎖深度の golden test
-
-  **Must NOT do**:
-  - detonate (管理爆発) のロジックを混ぜない (別パイプライン)
   - 死亡判定をここに入れない (server DeathService に委譲)
+  **⚠️ Phase B Audit Note (D2)**: 爆発時の ground item 破壊 / cancel hook は T23 DropService と連携。T27 単体では DropService fixture を使用。T23 完成後に ground item 破壊フローを結合テスト。
 
   **Recommended Agent Profile**:
   - **Category**: `deep`
@@ -1723,6 +1665,7 @@ Max Concurrent: 6 (Waves 12, 14)
   **Must NOT do**:
   - detonate / use_item / claim_reward の gameplay 接続は別タスク
   - MovementSystem 内で CP 回収 / item 取得 の event 送信ロジックを書かない (service に委譲)
+  **⚠️ Phase B Audit Note (D1)**: handleDig の unmanaged explosion trigger は T27 DetonateService/UnmanagedExplosionService に依存。T21 単体では stub/mock を使用して dig→EXP→drop フローを検証。T27 完成後に結合テストを実施すること。
 
   **Recommended Agent Profile**:
   - **Category**: `unspecified-high`
@@ -2524,8 +2467,9 @@ Max Concurrent: 6 (Waves 12, 14)
   **Recommended Agent Profile**:
   - **Category**: `unspecified-high`
   - **Skills**: []
-  - **Parallelization**: Wave 14 (with 32, 36, 38-40), blocked by 33
+  - **Parallelization**: Wave 13 (with 32, 38, 40), blocked by 33
   - **References**: `docs/plans/back/be-dev-plan.md:529-636` — §8
+  - **⚠️ Phase B Audit Note (D5)**: discard_item は T20 handleDiscardItem + T23 InventoryService/DropService に依存。claim_reward は T20 + T33 に依存。Blocked By を **T20, T23, T33** に拡張することを推奨。
 
   **Acceptance Criteria**:
   **TDD Tests:**
@@ -2570,8 +2514,9 @@ Max Concurrent: 6 (Waves 12, 14)
   **Recommended Agent Profile**:
   - **Category**: `unspecified-high`
   - **Skills**: []
-  - **Parallelization**: Wave 14 (with 32, 36, 37, 39, 40), blocked by 20, 31
+  - **Parallelization**: Wave 14 (with 32, 36, 37, 40), blocked by 20, 31
   - **References**: `docs/plans/back/be-dev-plan.md:702-762` — §10
+  - **⚠️ Phase B Audit Note (D3)**: Full flow テストは T32 FloorTransitionService + T33 RewardService にも依存。Blocked By を **T20, T31, T32, T33** に拡張すること。
 
   **Acceptance Criteria**:
   **TDD Tests:**
@@ -2618,8 +2563,9 @@ Max Concurrent: 6 (Waves 12, 14)
   **Recommended Agent Profile**:
   - **Category**: `visual-engineering`
   - **Skills**: []
-  - **Parallelization**: Wave 14 (with 32, 36-38), blocked by 22, 30
+  - **Parallelization**: Wave 13 (with 32, 36), blocked by 22, 30
   - **References**: `docs/plans/front/fe-dev-plan.md:783-903` — §8
+  - **⚠️ Phase B Audit Note (D6)**: TargetingOverlay は T29 targetingController / inputMapper の出力に依存。Blocked By を **T22, T29, T30** に拡張することを推奨。
 
   **Acceptance Criteria**:
   **TDD Tests:**

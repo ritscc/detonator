@@ -2805,6 +2805,1088 @@ overlapY = radius.y × 2 − |right.y − left.y|
 
 ---
 
+### § Reward Offer Generation 詳細
+
+#### 1. 発火条件
+
+- 報酬オファーは、EXP 加算後のレベル進行解決で `leveledUpCount > 0` になった時点で**即時生成**する。
+- 1 回の EXP 加算で複数レベルアップした場合、**レベルアップ 1 回につき 1 オファー**を生成する。
+- `rewards.json > levelUp.allowOfferCarryOver = true` のため、未受取オファーは持ち越され、同一プレイヤーは複数の保留オファーを同時に持てる。
+- 各生成ごとに対象プレイヤーの保留オファー一覧へ 1 件追加し、`PlayerState.pendingRewardCount` は**保留件数そのもの**を表す。
+- `reward_offer` は**レベルアップしたプレイヤー本人にのみ** `client.send` で送る。ルーム全体には `level_up` のみ通知する。
+- オファーに有効期限は設けない。MVP では**生成後から claim 成功まで失効しない**。再接続時は未受取オファーをそのまま再送してよい。
+
+#### 2. 報酬プール構成
+
+- 1 オファーの目標候補数は `rewards.json > levelUp.optionCount` に従い、**現行設定では常に 3 件**とする。
+- アイテム候補母集団は `packages/config/data/rewards.json > itemPool`、スキル候補母集団は `skillPool` を使用する。
+- 各エントリは、まず以下のゲートを満たす場合にのみ候補化される。
+  - `minFloor` がある場合: `floorNumber >= minFloor`
+  - `maxFloor` がある場合: `floorNumber <= maxFloor`
+  - `minLevel` がある場合: `playerLevel >= minLevel`
+  - `maxLevel` がある場合: `playerLevel <= maxLevel`
+- フロア番号は上記 `minFloor` / `maxFloor` のみで候補可否に影響する。**stageId による報酬プール分岐は行わない**。
+- 現行データ例:
+  - `ItemType.Bridge` は `minFloor: 2`
+  - `ItemType.ForceIgnition` は `minFloor: 3`
+  - `ItemType.MineRemoverHigh` と `SkillType.Chord` は `minFloor: 5`
+  - `ItemType.NineLives` は `minLevel: 3`
+  - `SkillType.DetonateCooldownReduction` と `SkillType.ItemSlotIncrease` は `minLevel: 2`
+- ゲート通過後の item / skill は 1 つの重み付き候補列へ正規化し、**1 オファー内で item と skill は混在してよい**。
+- 除外後の有効候補数が 3 未満の場合、`options.length` はその有効候補数とし、重複やダミー値で 3 件に埋めない。
+
+#### 3. 除外規則（この順で適用）
+
+1. **Full inventory exclusion**
+   - `type: "item"` 候補に対して適用する。
+   - 「インベントリ満杯」とは、`InventoryUpdatedEvent.maxSlots` の範囲で利用中の全スロットに空きがなく、かつ対象 `ItemType` を既存スタックへ加算できない状態を指す。
+   - 判定は `§ インベントリ操作詳細` の `canAddItemToInventory` と同一契約で行う。
+   - したがって、空き枠がなくても、同一 `itemType` の既存スロットに `stackCount + 付与量 <= items[itemType].maxStack` で積める場合は除外しない。
+   - 例: `ItemType.Dash` は `stackable: true`, `maxStack: 99` なので、満杯でも既存 `Dash` が 98 個なら候補に残り、99 個到達済みで空き枠がなければ候補から除外する。
+2. **Stack limit reached**
+   - `type: "skill"` 候補に対して適用する。
+   - 現在スタック数は、当該 `SkillType` を持つ `SkillStackEntry` の**件数**で数える。`effectValue` の合計値では数えない。
+   - `skills[skillType].stackLimit === 0` は無制限を意味し、この除外を行わない。
+   - `stackLimit > 0` かつ現在スタック数 `>= stackLimit` の場合は除外する。
+   - 例: `SkillType.ItemSlotIncrease` は `stackLimit: 7`、`SkillType.Chord` は `stackLimit: 1`。
+3. **Chord uniquePerRun**
+   - `SkillType.Chord` は `uniquePerRun: true` であり、**1 ラン中に 1 回しか出現してはならない**。
+   - サーバーは run-level の `uniqueRewardSet`（server-only 状態）を持ち、`SkillType.Chord` を含むオファーを生成した時点でこの集合へ登録する。
+   - 以後、そのランでは未受取・既受取を問わず `SkillType.Chord` を全プレイヤーの将来オファー候補から除外する。
+4. **Duplicate option prevention**
+   - 同一オファー内で同じ候補を 2 回出してはならない。
+   - `type: "item"` は `itemType` が同じなら重複、`type: "skill"` は `skillType` が同じなら重複とみなす。
+   - したがって、同一 `SkillType` を `effectValue` だけ変えて 2 枠提示することも禁止する。
+
+#### 4. オプション生成アルゴリズム
+
+1. `itemPool` / `skillPool` から floor / level ゲートを満たすエントリを抽出する。
+2. 上記の除外規則を順に適用して有効候補列を作る。
+3. item / skill を 1 つの候補列へ正規化し、各エントリの `weight` を共通の重みとして扱う。
+4. `options.length < optionCount` かつ候補列が空でない間、以下を繰り返す。
+   - `totalWeight` を計算する。
+   - `roll = rng.nextFloat() * totalWeight` を 1 回消費し、累積重みで 1 候補を選ぶ。
+   - 選ばれた候補を `RewardOption` へ具体化する。
+   - 具体化した候補と同一の item / skill は候補列から取り除く（オファー内重複禁止）。
+5. `type: "item"` の具体化:
+   - `ItemRewardOption = { type: "item", itemType, stackCount: 1 }`
+   - 現行 `rewards.json` では報酬アイテムの付与数は全て 1 とする。
+6. `type: "skill"` の具体化:
+   - `SkillRewardOption = { type: "skill", skillType, effectValue }`
+   - `effectValue` は `skills.json > valueRoll` から決定する。
+   - `min === max` の場合は固定値を使い、追加 RNG は消費しない。
+   - `min !== max` かつ `min`, `max` がともに整数の場合は `rng.nextInt(max - min + 1) + min` で**両端含み一様整数抽選**する。
+   - それ以外は `min + rng.nextFloat() * (max - min)` で**連続一様抽選**する。
+   - 例: `SkillType.RespawnTimeReduction` は 1〜3 秒の整数抽選、`SkillType.DetonateCooldownReduction` は 0.5〜1.0 秒の連続抽選。
+- 重みは rarity 名ではなく `RewardPoolEntry.weight` の数値のみを使う。現行 `rewards.json` では全エントリ `weight: 1` のため、同時点で有効な候補同士は等確率で選ばれる。
+- `offerId` は `claim_reward` と照合する**一意文字列**で、形式は小文字ハイフン区切り UUID v4 (`xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`) とする。`offerId` 生成は gameplay RNG の消費に含めない。
+- `options` の配列順は上記抽選順そのものであり、`ClaimRewardPayload.optionIndex` はこの順序を参照する。
+
+#### 5. `reward_offer` ペイロード構造
+
+- `reward_offer` の正式 payload は既存定義どおり次のみとする。
+
+```ts
+export interface RewardOfferEvent {
+  offerId: string;
+  options: RewardOption[];
+}
+```
+
+- 各 option の正式 shape:
+
+```ts
+type RewardOption =
+  | { type: "item"; itemType: ItemType; stackCount: number }
+  | { type: "skill"; skillType: SkillType; effectValue: number };
+```
+
+- `displayName` / `description` / `playerId` / `createdAt` / `expiresAt` は `reward_offer` payload に含めない。
+- クライアント表示に必要な名称・説明は `itemType` / `skillType` をキーに `packages/config/data/items.json` / `skills.json` を参照して解決する。
+
+---
+
+### § Reward Apply 詳細
+
+#### 1. `claim_reward` の検証順序
+
+- `claim_reward` は**保留オファー確定専用**コマンドであり、新規オファー生成は行わない。
+- 送信者は接続中クライアントであればよく、`PlayerLifeState.Alive` であることは要求しない。Ghost 中でも claim してよい。
+- 検証は必ず以下の順で行う。
+  1. 当該プレイヤーの保留オファー件数が 0 → `CLAIM_NO_PENDING_REWARD`
+  2. `offerId` と一致する保留オファーが存在しない → `CLAIM_INVALID_OFFER_ID`
+  3. `optionIndex` が `0 <= optionIndex < offer.options.length` を満たさない → `CLAIM_INVALID_OPTION`
+  4. 選択された `RewardOption` を**現在の状態**で再検証し、適用不能なら `CLAIM_INVALID_OPTION`
+- オファーの有効期限はないため、MVP に「expired」エラーケースは存在しない。
+- 既に claim 済みのオファーは保留一覧から削除済みである。
+  - その結果、再送時の扱いは上記 1 または 2 に従う。
+- 検証失敗時、オファーは消費されず保留のまま残る。
+
+#### 2. `type: "item"` 適用規約
+
+- item 報酬は `§ インベントリ操作詳細` の `addItemToInventory` 契約をそのまま使って適用する。
+- 適用入力は `itemType = selectedOption.itemType`, `stackCount = selectedOption.stackCount` とする。
+- スロット探索順序:
+  1. `items[itemType].stackable === true` かつ既存同種スロットへ全量積める場合、その先頭スロットへ加算する。
+  2. それが不可能なら、先頭の空スロットへ全量を新規格納する。
+  3. どちらも不可能なら適用失敗として `CLAIM_INVALID_OPTION`。
+- `usedNewSlot` の意味:
+  - 既存スタックへ加算した場合 `false`
+  - 新規スロットを消費した場合 `true`
+- `items[itemType].stackable === false` のアイテムは、同一 `itemType` の既存所持があっても積まず、常に新規スロットを要求する。
+- `maxStack` 超過時の扱い:
+  - **部分加算や自動分割は行わない**。
+  - 既存スタックに全量入らない場合はそのスタックを使わず、空スロットへ全量を入れられるかだけを見る。
+  - 空スロットも無い場合は claim を拒否する。
+- 現行の報酬 item は `stackCount: 1` 固定である。
+- 例:
+  - `ItemType.Dash` (`maxStack: 99`) を 98 個所持中に claim → 同一スロットが 99 になり `usedNewSlot = false`
+  - `ItemType.Dash` を 99 個所持中で空き枠なし → `CLAIM_INVALID_OPTION`
+- item 報酬適用成功時は、更新後 inventory を使って本人へ `inventory_updated` を private send する。
+
+#### 3. `type: "skill"` 適用規約
+
+- skill 報酬は既存スキルを上書きせず、`SkillStackEntry` を **1 件 append** して表現する。
+
+```ts
+type SkillStackEntry = {
+  skillType: SkillType;
+  effectValue: number;
+};
+```
+
+- append 前に、`skills[skillType].stackLimit` と現在件数を比較して再検証する。
+  - `stackLimit === 0` は無制限
+  - `stackLimit > 0` かつ現在件数 `>= stackLimit` の場合は `CLAIM_INVALID_OPTION`
+- `SkillType.Chord` は `stackLimit: 1` かつ `uniquePerRun` であり、**そのオファーが run-level の唯一予約済み Chord オファーである場合にのみ claim できる**。
+- `effectValue` は offer 生成時に確定した値をそのまま保存し、claim 時に再抽選しない。
+- claim 後のゲーム内効果は `aggregateSkillModifiers` による合算結果で即時反映される。
+- スキルはすべてパッシブであり、claim 時に active / passive 分岐は行わない。
+- `SkillType.ItemSlotIncrease` のように `InventoryUpdatedEvent.maxSlots` を変化させるスキルを claim した場合は、更新後 `maxSlots` を反映するため `inventory_updated` を private send する。
+- それ以外の skill claim 成功時は、専用の success event は送らない。
+
+#### 4. claim 成功後の状態更新
+
+- claim 成功時のみ、対象オファーを保留一覧から削除し、`PlayerState.pendingRewardCount` を **1 減算**する。
+- 1 つの `offerId` から claim できるのは 1 回のみであり、同一オファーの複数 option を同時取得することはできない。
+- `claim_reward` 自体でスコアは変動しない。`score_updated` を送る条件にもならない。
+- 成功時に送るイベントは以下のみとする。
+  - item 報酬または `SkillType.ItemSlotIncrease` claim に伴う `inventory_updated`（private）
+  - それ以外は public/private ともに追加イベントなし
+
+---
+
+### § Floor Score 詳細
+
+#### 1. `floorExp` の定義
+
+- `floorExp` は、**そのフロア開始後からフロアクリア確定までに、ルーム全体で実際に加算された EXP 量の総和**である。
+- 集計対象は `exp_gained.amount` の実加算値であり、現在の `ExpSource` では以下の両方を含む。
+  - `ExpSource.Dig`
+  - `ExpSource.DetonateCombo`
+- `floorExp` は**プレイヤー個別値ではなくチーム共有値**である。
+- `PlayerState.exp` の現在値（レベルアップ後の繰越残量）とは無関係であり、累積 total EXP でもない。
+- `floorExp` は `next_floor_started` の開始時に 0 へリセットし、フロアごとに独立集計する。
+- 例: 同フロア中に A が Dig で 40 EXP、B が Detonate Combo で 15 EXP を得たなら、そのフロアの `floorExp = 55`。
+
+#### 2. `calculateFloorScore` の正式計算式
+
+- 入力:
+  - `floorExp`
+  - `clearTimeSeconds`
+  - `config.scoring`
+- `clearTimeSeconds` は `FloorState.floorStartedAt` から、最後の `cp_collected` によりフロアクリアが確定した時刻までの経過秒数とする。
+  - すなわち `clearTimeSeconds = FloorClearedEvent.clearTimeMs / 1000`
+  - `calculateFloorScore` への入力前提として `clearTimeSeconds > 0` を要求する。
+- タイムボーナス係数は以下で決定する。
+
+```
+timeBonusMultiplier = max(
+  config.scoring.minimumTimeBonusMultiplier,
+  config.scoring.timeBonusBaseSeconds / clearTimeSeconds,
+)
+```
+
+- 現行設定では `timeBonusBaseSeconds = 600`, `minimumTimeBonusMultiplier = 1.0` である。
+- したがって、クリアが速いほど係数は大きく、遅いほど 1.0 に近づく。減衰関数は**線形ではなく反比例（inverse）**である。
+- フロアスコアは以下で確定する。
+
+```
+floorScore = round(floorExp × timeBonusMultiplier)
+```
+
+- 丸めは `config.scoring.roundingMode = "round"` に従い、**四捨五入**を行う。
+- 例:
+  - `floorExp = 120`, `clearTimeSeconds = 300` → `timeBonusMultiplier = 2.0` → `floorScore = 240`
+  - `floorExp = 120`, `clearTimeSeconds = 900` → `timeBonusMultiplier = 1.0` → `floorScore = 120`
+
+#### 3. スコア更新タイミング
+
+- `score_updated` は**フロアクリア確定直後**に送る。休憩フェーズ開始や次フロア開始まで待たない。
+- イベント順序は以下で固定する。
+  1. 最後の `cp_collected`
+  2. `floor_cleared`
+  3. `floorExp` と `clearTimeSeconds` から `floorScore` を計算
+  4. `GameState.totalScore += floorScore`
+  5. `score_updated`
+  6. その後、通常のフロアクリア遷移（タイマー停止、地雷原消滅、保留イベントキャンセル、全員復活、休憩フェーズ）
+- `totalScore` は**各フロアの `floorScore` の単純総和**である。他の補正値・順位点・ボーナス項目を含めない。
+- `score_updated.floorScore` は今回フロアぶんのみ、`score_updated.totalScore` は更新後の累積値を表す。
+- `score_updated` はフロアクリア時にのみ送る。`GameOverReason.AllDead` では途中フロアの部分点を精算しない。
+
+#### 4. Floor 10 の特例
+
+- Floor 10 のスコア計算式は他フロアと同一であり、**特別な倍率・固定ボーナス・最終階補正は付けない**。
+- Floor 10 クリア時も、まず通常どおり `floorScore` を計算して `totalScore` に加算し、`score_updated` を送る。
+- その直後に `game_over` を `reason: GameOverReason.Floor10Cleared` で送る。
+- `game_over.finalScore` は `score_updated.totalScore` と同じ値でなければならない。
+
+---
+
+### § Detonate MST 詳細
+
+関連: `detonate` コマンド L376、Detonate イベント L661、Detonate fuse L1905、`CellState` L1571、8近傍・4近傍の走査順序 L2606
+
+本節は `buildDetonatePreview()` と `resolveDetonateChain()` が共有で従う **Rooted Prim-MST + 幅優先連鎖** の正式仕様を定義する。
+
+#### 1. グラフモデル
+
+Detonate が扱うノード集合 `V` は、**評価時点スナップショット**の盤面から次表で決定する。
+
+| ノード種別 | 採用条件 | ノードに含むか | 備考 |
+|---|---|---|---|
+| 起爆根 (`sourceCoord`) | 点火評価が有効であること | 必ず含む | `flagged=true` の `SafeMine` / `DangerousMine`、または `hasRelayPoint=true` の `Safe` のいずれかでなければ fuse は解決されずキャンセルされる |
+| 旗付き地雷ノード | `flagged=true` かつ `cellType ∈ {SafeMine, DangerousMine}` | 含む | `flag` コマンド L342 により旗は地雷セルにのみ置ける |
+| Relay ノード | `hasRelayPoint=true` かつ `cellType = Safe` | 含む | Relay Point は `use_item` L456 により Safe セル上にのみ存在する |
+| 非旗地雷 | `flagged=false` の `SafeMine` / `DangerousMine` | 含まない | Detonate 経路には参加しない |
+| 通常 Safe | `hasRelayPoint=false` の `Safe` | 含まない | 伝播中継しない |
+| `Wasteland` / `Hole` | 任意 | 含まない | 点火ノードにも中継ノードにもなれない |
+
+- ノード集合は**重複なし**とし、`sourceCoord` が上記ノード条件を満たしていても 1 ノードとして数える。
+- ノード列挙順は **線形インデックス `y * width + x` 昇順**で正規化する。
+
+#### 2. 辺定義と重み
+
+- グラフは `V` 上の**完全無向グラフ**とする。
+- 任意の 2 ノード `a`, `b` (`a ≠ b`) の辺重み `w(a,b)` は次式とする。
+
+```
+w(a, b) = max(|a.x - b.x|, |a.y - b.y|)
+```
+
+- すなわち重みは **Chebyshev 距離**である。
+- 辺の有無は中間マスのセル種別に依存しない。`Safe` / `Wasteland` / `Hole` が間にあっても、**ノード間の幾何学距離のみ**で辺を張る。
+
+#### 3. Rooted Prim の根・親・追加順
+
+根付き木 `T` は `sourceCoord` を根として構築する。
+
+**再計算タイミング**:
+
+| タイミング | 使用関数 | 盤面スナップショット |
+|---|---|---|
+| 点火コマンド受理直後 | `buildDetonatePreview()` | 受理時点の盤面 |
+| fuse 終了時（3.0 秒後） | `resolveDetonateChain()` | `scheduledAt <= now` になった tick の盤面 |
+
+- fuse は **3.0 秒固定**（主要パラメータ L110、Detonate fuse L1905）。
+- preview 用 MST と fuse 解決用 MST は**別物**であり、fuse 中に旗や Relay Point やセル種別が変化した場合、後者を正とする。
+- `resolveDetonateChain()` 開始後は、**その Detonate について MST を再計算しない**。125ms ごとの chain step 中に盤面が変化しても、その Detonate の経路は解決開始時に固定された木と走査順を使い切る。
+
+Prim の各選択は次の辞書式タイブレークで完全決定する。
+
+1. **各未訪問ノードの親候補選択**: 既訪問ノード集合 `S` に対し、未訪問ノード `u` の親 `parent(u)` は `S` 内で `tuple = (w(parent,u), parentIndex)` が最小のノード。
+2. **次に木へ追加する子ノード選択**: 未訪問ノードのうち `tuple = (bestWeight(u), childIndex, parentIndex(u))` が最小のノードを追加する。
+
+ここで:
+
+- `parentIndex = parent.y * width + parent.x`
+- `childIndex = u.y * width + u.x`
+
+したがって、同一重みなら **子ノードの線形インデックス昇順**が優先され、同じ子に対する親競合では **親の線形インデックス昇順**で決まる。
+
+#### 4. 伝播順（`provisionalPath` / `remainingPath`）
+
+`T` から実際の連鎖順配列 `path` を次手順で構築する。
+
+1. 幅優先探索（FIFO）を使う。
+2. 初期キューは `[root]`。
+3. ノード `n` を dequeue したら `path` へ追加する。
+4. `n` の子は **子ノード線形インデックス昇順**で queue へ enqueue する。
+5. ただし `n` が `SafeMine` の場合、そのノードで枝刈りが発生するため**子を enqueue しない**。
+6. `DangerousMine` と Relay ノード（`Safe` + `hasRelayPoint=true`）は子 enqueue を行う。
+
+この `path` の意味をイベントへ次のように写像する。
+
+| 名称 | 定義 |
+|---|---|
+| `provisionalPath` | preview 構築時点スナップショットから作った `path`。**先頭に `sourceCoord` 自身を含む** |
+| `resolvedPath` | fuse 解決時点スナップショットから作った `path`。実際の chain step はこれに従う |
+| `remainingPath` | `resolvedPath` から**今回処理したノードを除いた残りの suffix**。chain 中に再計算しない |
+
+- `remainingPath` は `detonate_chain_step` L729 の `coord` 処理**後**の残経路であり、`resolvedPath[i]` を処理した step では `resolvedPath[(i+1)...]` を返す。
+- `provisionalPath` / `remainingPath` は**BFS 順を保持する配列**であり、線形インデックス順には並べ替えない。
+
+#### 5. chain step の時刻
+
+- 連鎖速度は **1/8 秒 = 125ms / ノード**（主要パラメータ L111、Detonate fuse L1905）。
+- `resolvedPath[i]` の処理時刻は `fuseEndsAt + i * 125ms` とする。
+- よって **最初の step（root）は fuse 満了と同時刻、オフセット 0ms** で実行される。以後 125ms ごとに 1 ノードずつ処理する。
+
+#### 6. ノード種別ごとの step 変異
+
+各 step は、対象ノード 1 個に対して次表の処理を行う。
+
+| 処理前セル | ノード条件 | 変異 | 枝の扱い | カウント |
+|---|---|---|---|---|
+| `DangerousMine` | `flagged=true` または source | `cellType = Safe`、`flagged = false`、`hasRelayPoint = false` | 継続 | `dangerousMineCellsConverted += 1` |
+| `SafeMine` | `flagged=true` または source | `cellType = Safe`、`flagged = false`、`hasRelayPoint = false` | **停止** | `safeMineCellsConverted += 1` |
+| `Safe` + Relay | `hasRelayPoint=true` | `cellType` は `Safe` のまま、`flagged = false`、`hasRelayPoint = false` | 継続 | 変換数加算なし |
+
+補足:
+
+- `adjacentMineCount` は `Safe` 化後もそのセルの数値として保持してよい。Detonate は `adjacentMineCount` を再計算しない。
+- 同一セルに `flagged` と `hasRelayPoint` が同時に立っていた場合、両方とも除去する。
+- `cellTypeBefore` は上表の**変異前**セル種別を `detonate_chain_step` に入れる。
+- `wasRelayPoint` は変異前の `hasRelayPoint` 値である。
+
+#### 7. Detonate が処理しないセル
+
+次のセルは Detonate の `path` に入らず、chain step でも処理されない。
+
+| セル | 扱い |
+|---|---|
+| `flagged=false` の `SafeMine` / `DangerousMine` | 完全にスキップ |
+| Relay Point のない `Safe` | 完全にスキップ |
+| `Wasteland` | 完全にスキップ |
+| `Hole` | 完全にスキップ |
+
+したがって、「経路上の旗と Relay Point を除去する」とは、**実際に `path` 上で処理されたノードに付随する `flagged` / `hasRelayPoint` を除去する**ことを意味する。中間マスを線描画のように辿って消す処理は行わない。
+
+#### 8. 同一深度内の順序
+
+同じ BFS 深度に複数ノードが存在する場合、step 順は次で一意に決まる。
+
+1. 親ノードが `resolvedPath` に現れる順
+2. 同一親の子同士は **`y * width + x` 昇順**
+
+よって chain step 順序の決定規則は、Detonate コマンド L411 のタイブレークと一致する。
+
+#### 9. fuse キャンセルとの相互作用
+
+`CancellationIndex` により fuse エントリがキャンセルされた場合の仕様は次のとおり。
+
+| キャンセル理由 | 条件 | 結果 |
+|---|---|---|
+| `source_removed` | source セルが点火源要件を失った | pending `detonate_resolve` を削除し、`detonate_fuse_canceled` を送信 |
+| `mine_removed` | source と同一地雷が地雷除去機等で除去された | 同上 |
+| `flag_removed` | source が旗付き地雷だったが fuse 中に旗が外れた | 同上 |
+| `floor_cleared` | フロアクリアで pending fuse をフラッシュした | 同上 |
+
+- キャンセル時、preview で配った `provisionalPath` は**以後無効**とみなす。サーバーは preview を保持しない。
+- キャンセルされた fuse からは `detonate_chain_step` / `detonate_resolved` を一切送らない。
+- fuse キャンセルは**解決開始前**にのみ起こる。最初の chain step 開始後に部分ロールバックは存在しない。
+
+#### 10. 決定性と不変条件
+
+- Detonate MST / path 構築は **RNG を一切消費しない**。
+- 「同一入力」とは、少なくとも次が完全一致することをいう。
+  - `grid.width`, `grid.height`
+  - 各セルの `cellType`, `adjacentMineCount`, `flagged`, `hasRelayPoint`, `erosionWarning`
+  - `sourceCoord`
+- 上記が一致する 2 つの入力では、`provisionalPath`、`processedCells`、`remainingPath`、変換数は常に一致しなければならない。
+- `buildDetonatePreview()` / `resolveDetonateChain()` は **入力グリッドを直接変更しない**。返り値 `updatedGrid` が必要な場合はクローンに対して変異を適用する。
+
+---
+
+### § Unmanaged Explosion BFS 詳細
+
+関連: `dig` コマンド L300、管理外爆発イベント L790、管理外爆発連鎖 L1935、`item_destroyed` L1256、8近傍・4近傍の走査順序 L2606、`CellState` L1571
+
+本節は `triggerUnmanagedExplosion()` と `resolveUnmanagedChainStep()` が従う **即時爆発 + BFS 連鎖** の正式仕様を定義する。
+
+#### 1. 発火条件と震源
+
+- 管理外爆発は、`dig` L300 が受理され、対象セルの**処理前 `cellType = DangerousMine`** であった場合にのみ発生する。
+- リーチ外・対象セル不正・非生存・非 Playing フェーズなどで `dig` が拒否された場合、管理外爆発は発生しない。
+- 震源 `epicenterCoord` は**誤掘りした `DangerousMine` の座標そのもの**である。
+- 最初の爆発（深度 0）は `dig` 処理の同 tick で即時適用し、`unmanaged_explosion_triggered` L792 を送る。
+
+#### 2. 爆風・荒地化半径
+
+各爆発ノード `c` に対し、影響座標は次の 2 集合で定義する。いずれも**グリッド内座標のみ**を採用し、重複を除去したうえで **線形インデックス昇順**に正規化する。
+
+| 名称 | 定義 | 中心含有 |
+|---|---|---|
+| `blastCoords` | `max(|dx|, |dy|) <= 1` | 含む |
+| `wastelandCoords` | `|dx| + |dy| <= 2` | 含む |
+
+- `blastCoords` は **Chebyshev 半径 1**、`wastelandCoords` は **Manhattan 半径 2**。
+- 常に `blastCoords ⊆ wastelandCoords` である。
+- **震源セル自身は `blastCoords` と `wastelandCoords` の両方に必ず含まれる。**
+
+#### 3. BFS 隣接定義
+
+- BFS の「隣接 DangerousMine」とは、**現在爆発しているノードの `blastCoords` 内に存在する、未訪問の `DangerousMine` セル**を指す。
+- したがって BFS の隣接判定は **8 方向（Chebyshev 距離 1）**である。
+- `wastelandCoords` に含まれていても `blastCoords` に入っていない `DangerousMine` は、その step からは連鎖しない。
+- 自分自身（現在爆発中の座標）は隣接候補から除外する。
+
+#### 4. 初期キュー状態
+
+深度 0 の爆発適用後、初期キュー `Q` は次で構築する。
+
+1. source の `blastCoords` から、source 自身を除く `DangerousMine` を抽出する。
+2. **線形インデックス昇順**で整列する。
+3. 各座標を `chainDepth = 1` として FIFO キューへ enqueue する。
+
+初期 visited 集合には以下を入れる。
+
+- source 自身
+- 初期キューへ入れた全 DangerousMine
+
+これにより同一セルの二重 enqueue を防ぐ。
+
+#### 5. キュー処理アルゴリズム
+
+- データ構造は **FIFO**。
+- 1 エントリは `{ coord, chainDepth }` を持つ。
+- 連鎖速度は **125ms / dequeue 1 回**である。source の即時爆発を step 0 とし、その後の queue 先頭を 125ms ごとに 1 件ずつ処理する。
+- `chainDepth` は**親の `chainDepth + 1`** で増加する。最初の誤掘り爆発は深度 0、初期キューの要素は深度 1。
+- DangerousMine は **enqueue 時に visited へ登録**する。dequeue 時登録ではない。
+- したがって 1 つの DangerousMine が複数の爆風に同時に入っても、最初に enqueue された 1 回だけ処理される。
+- `atOffsetMs` は queue の実 dequeue 順に従い、source を除く 1 件目が 125、2 件目が 250、以後 `125 * dequeueSequence` とする。
+
+#### 6. 1 step 内の厳密な処理順序
+
+深度 0 の初回爆発と、深度 1 以降の `resolveUnmanagedChainStep()` は**同じ順序**で処理する。現在処理ノードを `currentCoord`、その step 開始時の盤面を「処理前スナップショット」と呼ぶ。
+
+1. `blastCoords` / `wastelandCoords` を処理前スナップショットから計算する。
+2. `blastCoords` 内の未訪問 `DangerousMine`（`currentCoord` 自身を除く）を `nextDangerousCoords` として抽出し、線形インデックス昇順で queue 末尾へ enqueue する。
+3. `wastelandCoords` を線形インデックス昇順で走査し、下表の terrain mutation を適用する。
+4. `wastelandCoords` 上の地上ドロップを即時破壊する。
+5. **この step で mine / non-mine 状態が変化した座標**の周囲 8 近傍にある `Safe` セルの `adjacentMineCount` を再計算する。
+6. 深度 0 なら `unmanaged_explosion_triggered`、深度 1 以上なら `unmanaged_chain_step` を送信する。
+7. キューが空になった時点で `unmanaged_explosion_resolved` を送信する。
+
+#### 7. terrain mutation 規則
+
+`wastelandCoords` に属する各セルの変異は次表に従う。
+
+| 条件 | 変異 |
+|---|---|
+| `coord === currentCoord`（現在爆発している DangerousMine） | 必ず `cellType = Wasteland`、`flagged = false`、`hasRelayPoint = false` |
+| その他の `DangerousMine` | **この step では `cellType` を変えない**。ただし `flagged = false`、`hasRelayPoint = false` は適用する |
+| `SafeMine` | `cellType = Wasteland`、`flagged = false`、`hasRelayPoint = false` |
+| `Safe` | `cellType = Wasteland`、`flagged = false`、`hasRelayPoint = false` |
+| 既に `Wasteland` | `Wasteland` のまま。`flagged = false`、`hasRelayPoint = false` |
+| `Hole` | 変更しない |
+
+補足:
+
+- 周辺の `DangerousMine` を即座に `Wasteland` 化しないのは、そのセルが後続 queue step の爆発源になるためである。
+- 旗と Relay Point の除去規則は `CellState` 補足 L1599 と整合する。
+
+#### 8. `adjacentMineCount` の更新
+
+- `adjacentMineCount` を持つ意味があるのは `Safe` セルのみ（`CellState` L1579）。
+- 各 step 後、**この step で mine / non-mine 状態が変化した座標**の周囲 8 近傍にある `Safe` セルだけを再計算する。全盤面再計算は行わない。
+- `SafeMine -> Wasteland` と `DangerousMine -> Wasteland` は、どちらも「周囲地雷数を 1 減らしうる変化」である。
+- `SafeMine` と `DangerousMine` はいずれも「地雷 1 個」として数えるため、後続 step で `DangerousMine` が爆発するまで、そのセルは近傍 count 上は mine のまま扱われる。
+
+#### 9. 連鎖停止条件
+
+- 停止条件は **FIFO キュー枯渇のみ**であり、最大深度は設けない。
+- source 爆発後に `nextDangerousCoords` が 0 件であれば、深度 0 の初回爆発直後に解決完了となる。
+- 最終 resolved 状態とは、以下をすべて満たす状態である。
+  - queue が空
+  - visited 済み DangerousMine はすべて 1 回だけ爆発処理済み
+  - 爆発済みノードは `Wasteland`
+  - `item_destroyed` 対象ドロップはすべて消去済み
+
+#### 10. 地上ドロップとの相互作用
+
+- `wastelandCoords` に存在した地上ドロップは**その step で即時破壊**する。
+- 公開イベントは `item_destroyed` L1256 **のみ**であり、`item_picked_up` を取り消すための別イベントは存在しない。
+- 破壊されたドロップに紐づく `item_expiry` は後から発火してはならない。よってサーバーは expiry エントリを同時に無効化する。
+- `ItemDestroyReason` は必ず `unmanaged_explosion` とする（`packages/protocol/src/types.ts` L103）。
+
+#### 11. 決定性と不変条件
+
+- 管理外爆発 BFS は **RNG を一切消費しない**。
+- 同一入力（`grid` の全セル状態、`epicenterCoord`、queue 内容、visited 内容）が一致するなら、`blastCoords` / `wastelandCoords` / `nextDangerousCoords` / queue 進行結果は常に一致する。
+- pure rules 関数は入力グリッドを直接変更せず、返却する `updatedGrid` へ変異を適用する。
+
+---
+
+### § Erosion Conversion 詳細
+
+関連: 主要パラメータ L86、侵食イベント L872、`ErosionState` L1655、侵食タイマー L1959、最前線抽出・選択 L2740、8近傍・4近傍の走査順序 L2606
+
+本節は `planErosionWarning()` と `applyErosionConversion()` が従う **frontline 選定 + 比率変換** の正式仕様を定義する。
+
+#### 1. `widthCap` の権威値
+
+`widthCap` は「1 回の左右探索で選択範囲が取りうる最大横幅（列数）」である。
+
+| 項目 | 仕様 |
+|---|---|
+| 権威的な設定単位 | **ステージ単位** |
+| 設定フィールド | stage の `boardProfile.erosionFrontlineWidthCap` |
+| MVP 既定値 | **4** |
+| floor 1 の値 | **4** |
+
+- `rules-core` の pure 関数は `widthCap` を**引数として受け取る**。どの数値を渡すかの権威は現在フロアの stage 定義にある。
+- stage に明示値がない場合も、MVP では **4** を用いる。
+- `widthCap <= 0` は不正値として扱い、`selectFrontlineTargets()` は空配列を返す（§最前線 L2757 と一致）。
+- `widthCap` が利用可能な frontline 列数より大きい場合、**存在する分だけ選んで終了**し、埋め草やラップアラウンドは行わない。
+
+#### 2. frontline 抽出の権威定義
+
+frontline 抽出そのものは §最前線 L2740 を正とする。要点のみ再掲すると次のとおり。
+
+- frontline は **`Safe` セルのうち、周囲 8 近傍に `SafeMine` / `DangerousMine` / `Wasteland` のいずれかが存在するセル**である。
+- 走査は全盤面を線形インデックス昇順で行い、返却順もその順を保持する。
+
+侵食文脈での補足:
+
+| ケース | 扱い |
+|---|---|
+| `bridge` により `Hole -> Safe` になったセル | `Safe` であれば frontline 候補になりうる |
+| スポーン地点セル | `Safe` であれば除外しない |
+| 既存 `Wasteland` | frontline 候補ではないが、warning/convert 対象へ後段で常に加える |
+
+#### 3. warning 対象選定アルゴリズム
+
+`planErosionWarning({ grid, targetCount, widthCap, rng })` は次手順で `targetCoords` を構築する。
+
+##### 3-1. Safe 対象の選定
+
+1. `frontline = extractFrontlineCoords(grid)` を取得する（§最前線 L2740）。
+2. `selectedSafeCoords = []`、`selectedKeys = ∅`、`excludedKeys = ∅` で開始する。
+3. `currentFrontline = normalize(frontline)` を作る。ここでは以下を除外する。
+   - 範囲外座標
+   - 現在 `Safe` でない座標
+   - 重複座標
+   - `selectedKeys` または `excludedKeys` に入っている座標
+4. 以後、次の停止条件のいずれかに達するまで pass を繰り返す。
+   - `selectedSafeCoords.length >= targetCount`
+   - `currentFrontline.length === 0`
+   - pass 回数 `>= targetCount`
+
+##### 3-2. 各 pass の手順
+
+各 pass では次を行う。
+
+1. **RNG 消費**: `rng.nextInt(currentFrontline.length)` を **1 回だけ**呼び、seed 1 マスを選ぶ。
+2. `currentFrontline` 内で seed と 8 近傍連結している成分を BFS で収集する。
+3. その成分を列単位で分解し、列順を次のように固定する。
+
+```
+seed.x,
+seed.x - 1,
+seed.x + 1,
+seed.x - 2,
+seed.x + 2,
+...
+```
+
+4. 各列内のセル順は次の辞書式順序とする。
+   - seed 自身がその列にあるなら最優先
+   - それ以外は `|y - seed.y|` 昇順
+   - 同値なら `y` 昇順
+   - さらに同値なら `x` 昇順
+5. 列を 1 本ずつ採用していく。採用後の横幅 `maxX - minX + 1` が `widthCap` を超える列は**採用せず、その pass を即終了**する。
+6. pass 中に採用されたセルを `selectedSafeCoords` へ追加する（既選択重複は無視）。
+7. `currentFrontline` のうち今回選ばれなかったセルは、**同一フェーズ内で再探索しない**ため `excludedKeys` へ入れる。
+8. まだ `targetCount` に達していなければ、新 frontline を全盤面線形走査で再構築する。新 frontline 条件は以下の両方を満たす `Safe` セル。
+   - `selectedKeys` にも `excludedKeys` にも入っていない
+   - 周囲 8 近傍に、`selectedKeys` 済みセルまたはハザード（`SafeMine` / `DangerousMine` / `Wasteland`）が存在する
+
+##### 3-3. `targetCoords` の構築
+
+- `selectedSafeCoords` は**上記 pass 順・列順・列内順を保持**する。
+- `wastelandCoords` は、warning 計画時点の盤面に存在する全 `Wasteland` を**線形インデックス昇順**で列挙したものとする。
+- 最終 `targetCoords` は次の連結とする。
+
+```
+targetCoords = selectedSafeCoords ++ wastelandCoords
+```
+
+#### 4. RNG 消費と決定性（warning 計画）
+
+- warning 計画で RNG を消費するのは**各 pass の seed 選択 1 回のみ**である。
+- よって RNG 消費回数は `0 .. targetCount` 回であり、実際の回数は「成功した pass 数」に等しい。
+- 同一入力グリッド・同一 `targetCount`・同一 `widthCap`・同一 RNG 状態からは、常に同一の `targetCoords` を返さなければならない。
+
+#### 5. SafeMine / DangerousMine 変換対象の正規化
+
+`applyErosionConversion({ grid, targetCoords, safeMineRatio, dangerousMineRatio, rng })` は、まず `targetCoords` を次の規則で正規化する。
+
+1. 範囲外座標を除外
+2. 重複座標を除外（最初の出現だけ採用）
+3. 現在 `cellType ∈ {Safe, Wasteland}` の座標だけを conversion 対象として採用
+
+したがって:
+
+| 現在セル種別 | conversion 対象に含むか | 備考 |
+|---|---|---|
+| `Safe` | 含む | warning で選ばれた通常対象 |
+| `Wasteland` | 含む | 常時 warning/convert 対象 |
+| `SafeMine` / `DangerousMine` | 含まない | 本来 warning 計画で入らない。誤入力時も **skip** し、再抽選しない |
+| `Hole` | 含まない | 侵食変換しない |
+
+以後、正規化後の件数を `N` とする。
+
+#### 6. 比率から変換数を決める方法
+
+- `safeMineRatio` と `dangerousMineRatio` は、server がそのフェーズの式から解決した**非負整数重み**である。
+- MVP の既定値は主要パラメータ L98 の **7:3**。
+- 有効条件は `safeMineRatio + dangerousMineRatio > 0`。和が 0 の場合は不正入力とする。
+
+変換数は以下で決定する。
+
+```
+sum = safeMineRatio + dangerousMineRatio
+exactSafe = N * safeMineRatio / sum
+exactDanger = N * dangerousMineRatio / sum
+baseSafe = floor(exactSafe)
+baseDanger = floor(exactDanger)
+remaining = N - baseSafe - baseDanger
+```
+
+`remaining` の配分規則:
+
+1. 小数部 `fracSafe = exactSafe - baseSafe`, `fracDanger = exactDanger - baseDanger` を比べる
+2. 大きい方へ 1 枠ずつ配る
+3. 小数部同値なら **SafeMine を優先**する
+
+結果として `safeMineCount + dangerousMineCount = N` を満たす。
+
+#### 7. ランダム配置アルゴリズム
+
+変換先タイプの座標割り当ては、正規化済み対象配列に対する **Fisher-Yates shuffle** で決定する。
+
+1. 正規化済み対象配列を現在順（`targetCoords` 正規化後の順）で用意する。
+2. `for i = N-1 downto 1` の順に次を実行する。
+   - `j = rng.nextInt(i + 1)`
+   - `coords[i]` と `coords[j]` を swap する
+3. shuffle 後の先頭 `safeMineCount` 個を `SafeMine`、残りを `DangerousMine` にする。
+
+したがって:
+
+- conversion 用 RNG 消費回数は **`max(0, N - 1)` 回**である。
+- 同一 seed / 同一入力なら、どの座標が `SafeMine` / `DangerousMine` になるかは常に一致する。
+
+#### 8. 各変換セルの mutation
+
+各対象セルには次を適用する。
+
+| 項目 | 変異 |
+|---|---|
+| `cellType` | 割り当て結果に応じて `SafeMine` または `DangerousMine` |
+| `flagged` | `false` |
+| `hasRelayPoint` | `false` |
+| `erosionWarning` | `false` |
+| `adjacentMineCount` | `0` に正規化してよい（地雷セルでは未使用） |
+
+#### 9. `adjacentMineCount` 再計算範囲
+
+- 再計算対象は**全盤面ではなく局所**である。
+- 具体的には、今回変換した全座標の**周囲 8 近傍**にある全 `Safe` セルを収集し、重複除去後に `adjacentMineCount` を再計算する。
+- `updatedAdjacentCoords` は「再計算した結果、値が実際に変わった `Safe` セル座標」のみを**線形インデックス昇順**で返す。
+- `SafeMine` と `DangerousMine` はどちらも「地雷 1 個」として数えるため、`SafeMine` / `DangerousMine` の別は**近傍 count 値には影響しない**。影響するのは「そのセルが地雷化されたか否か」のみである。
+
+#### 10. pause / resume
+
+侵食停止アイテム（`take_a_breath` / `short_break`。`use_item` L465-L466）の効果中は次を満たす。
+
+| 項目 | pause 中の仕様 |
+|---|---|
+| `ErosionState.active` | `false` |
+| 画面上に出ている warning | **即時キャンセル**。`erosion_warning_canceled` を送ったうえで、公開状態の `warningCellKeys` と各セル `erosionWarning` は消す |
+| 現在 warning に対応する pending `erosion_convert` | **保持して defer**。対象座標・比率は再抽選しない |
+| future の pending `erosion_warn` | **defer**。pause 中に新 warning を開始しない |
+
+resume 時の仕様:
+
+- `ErosionState.active = true` に戻す。
+- pause 中に due だった `erosion_warn` / `erosion_convert` は、**再計算や再抽選を行わず**、resume 後の最初の tick で元の `scheduledAt` 順に処理する。
+- pause で消した warning を自動再表示しない。したがって、pause 中に保留された `erosion_convert` は resume 後に**追加 warning なしで**実行されうる。
+
+#### 11. floor clear flush
+
+フロアクリア時は、侵食に関して次を**同一フラッシュ処理**として行う。
+
+1. `clearAllErosionWarnings(grid, erosionState)` を現在フロアの `grid` と `erosionState` に対して呼ぶ
+2. queue 内の pending `erosion_warn` / `erosion_convert` を全削除する
+3. warning が可視状態だった場合のみ、`erosion_warning_canceled` を `reason = floor_cleared` で送る
+
+フラッシュ後の事後条件:
+
+- 全セルで `erosionWarning = false`
+- `erosionState.warningCellKeys` は**空**
+- そのフロア由来の `erosion_warn` / `erosion_convert` は後続 tick で発火しない
+
+#### 12. 決定性と不変条件
+
+- `planErosionWarning()` と `applyErosionConversion()` は**入力グリッドを直接変更しない**。返却側の `updatedGrid` へ変異を反映する。
+- warning 計画と conversion の RNG 消費パターンは本節で定義した回数・順序以外を許さない。
+- 同一入力グリッド、同一 `targetCount` / `widthCap` / ratio、同一 RNG 状態からは、`targetCoords`、`convertedSafeMineCoords`、`convertedDangerousMineCoords`、`updatedAdjacentCoords` が常に一致しなければならない。
+
+---
+
+### § Spawn Assignment 詳細
+
+#### `SpawnGroupDefinition` の正式契約
+
+`stages.json` の `spawnGroups` は、各ステージにおける**初期スポーン候補集合**を表す。MVP の正式な 1 要素の形は以下で固定する。
+
+| フィールド | 型 | 必須 | 契約 |
+|---|---|---|---|
+| `groupId` | `string` | 必須 | ステージ内で一意。空文字不可。グループ順序の決定に使用する。 |
+| `coords` | `GridCoord[]` | 必須 | 長さ 1 以上。各要素は整数座標。グループ内重複禁止。 |
+| `count` | — | 不使用 | MVP 契約外。入力に含まれても `pickInitialSpawnAssignments` は参照してはならない。 |
+| `priority` | — | 不使用 | MVP 契約外。入力に含まれても `pickInitialSpawnAssignments` は参照してはならない。 |
+| `id` | — | 不可 | 識別子の正式フィールド名は `groupId` のみとする。 |
+
+ステージ単位の追加制約:
+
+- `spawnGroups.length >= 1` を満たさないステージは不正入力とする。
+- 全 `coords` の**ステージ全体での重複は禁止**する。同一座標が複数グループに属してはならない。
+- 全 `coords` は `0 ≤ x < grid.width` かつ `0 ≤ y < grid.height` を満たさなければならない。
+- 全 `coords` はフロア開始時点の `CellType.Safe` へ対応しなければならない。`SafeMine` / `DangerousMine` / `Wasteland` / `Hole` は不可。
+- 1 人のプレイヤーが複数グループに属することはない。割り当て結果は常に **`sessionId -> 1 座標`** である。
+
+#### `pickInitialSpawnAssignments` の入力 / 出力
+
+- 入力:
+  - `sessionIds: string[]`
+  - `spawnGroups: SpawnGroupDefinition[]`
+  - `gridWidth: number`
+  - `gridHeight: number`
+- 出力:
+  - `Map<string, GridCoord>`
+
+#### `pickInitialSpawnAssignments` の決定的アルゴリズム
+
+1. `sessionIds` を**文字列昇順**でソートする。
+2. `spawnGroups` を `groupId` の**文字列昇順**でソートする。
+3. 各グループの `coords` は**配列 index 順をそのまま使用**する。並べ替えは行わない。
+4. 以下の**ラウンドロビン展開**で、グループ群から 1 本のスロット列 `orderedSlots` を構築する。
+   - `coordIndex = 0, 1, 2, ...` を昇順に進める。
+   - 各 `coordIndex` ごとに、ソート済み `spawnGroups` を先頭から順に走査する。
+   - そのグループに `coords[coordIndex]` が存在する場合のみ `orderedSlots` に追加する。
+   - すべてのグループで該当 index が存在しなくなった時点で終了する。
+5. `sessionIds.length > orderedSlots.length` の場合、**座標重複でのあふれ吸収は行わずエラー**とする。
+6. `i` 番目の `sessionId` に `orderedSlots[i]` を割り当てる。
+
+展開例（`g1=[a,b]`, `g2=[c,d,e]`）:
+
+| `orderedSlots` の順序 | 生成元 |
+|---|---|
+| 1 | `g1.coords[0] = a` |
+| 2 | `g2.coords[0] = c` |
+| 3 | `g1.coords[1] = b` |
+| 4 | `g2.coords[1] = d` |
+| 5 | `g2.coords[2] = e` |
+
+境界条件:
+
+- `sessionIds.length = 0` の場合、空 `Map` を返す。
+- `sessionIds.length < spawnGroups.length` の場合、後半グループは**空のまま残りうる**。
+- 同距離・同価値といった概念は初期スポーン割り当てには存在しない。順序は **`sessionId` 昇順 → `groupId` 昇順 → `coords` 配列 index 順**のみで決まる。
+
+#### `sessionId ↔ GridCoord` 対応の安定性
+
+- 同一フロア・同一 `spawnGroups`・同一 `sessionId` 集合であれば、**入力配列順に関係なく**同じ割り当てを返さなければならない。
+- `sessionId` 集合が変化した場合は、その集合全体に対して再計算する。既存プレイヤーの座標維持は保証しない。
+- この安定性は**現在フロア内**でのみ保証する。フロア遷移後は次フロアの `spawnGroups` に対して**再計算**する。
+- `buildFloorClearTransition` の Step 6 で使用する「初期スポーン位置」は、そのフロア開始時に確定した `spawnAssignments` をそのまま再利用する。フロア途中で再抽選してはならない。
+- 座標一意性は、`spawnGroups` のステージ全体重複禁止と、`sessionIds.length <= orderedSlots.length` の 2 条件で保証する。
+- `GridCoord` を `PlayerState.x / y` に実適用するときは、セル中心 `(coord.x + 0.5, coord.y + 0.5)` を使用する。
+
+#### `pickMidGameJoinSpawn` の入力 / 出力
+
+- 入力:
+  - `grid: GridState`
+  - `alivePlayers: PlayerState[]`（`lifeState = PlayerLifeState.Alive` のみを対象とする）
+  - `rng`
+- 出力:
+  - `GridCoord`
+
+#### `pickMidGameJoinSpawn` の選定規則
+
+1. `alivePlayers.length = 0` の場合はエラーとする。
+2. `alivePlayers` を `sessionId` 文字列昇順にソートする。
+3. `anchorIndex = rng.nextInt(alivePlayers.length)` でアンカーとなる生存プレイヤーを 1 人選ぶ。
+4. アンカープレイヤーの現在セルは `anchorCell = { x: floor(player.x), y: floor(player.y) }` とする。
+5. 「周囲」は **Chebyshev 距離 2 以下**（5x5 領域）と定義する。
+6. 近傍候補の探索順は以下で固定する。
+   - 距離 `d = 0 → 1 → 2`
+   - 同一距離内では `y` 昇順、同値時 `x` 昇順（行優先）
+7. 近傍 `Safe` 候補探索:
+   - 条件: in-bounds、`CellType.Safe`、かつ任意の生存プレイヤーの現在セルと一致しない
+   - 最初に候補が見つかった距離 `d` の候補集合だけを採用し、`rng.nextInt(candidateCount)` で 1 つ選ぶ
+8. 近傍 `Safe` が 1 つもない場合、同じ探索順・同じ占有除外で `CellType.Wasteland` を探索する。
+9. 近傍 `Wasteland` もない場合、グリッド全体を行優先（`y` 昇順 → `x` 昇順）で走査し、まず `CellType.Safe`、なければ `CellType.Wasteland` から `rng.nextInt(candidateCount)` で 1 つ選ぶ。
+10. `Safe` / `Wasteland` のいずれもグリッド上に存在しない場合はエラーとする。
+
+補足:
+
+- `SafeMine` / `DangerousMine` / `Hole` は途中参加スポーン先として常に不許可。
+- 同距離候補のタイブレークは**RNG 抽選**であり、RNG 入力が同一なら出力も同一でなければならない。
+- 同一 `grid`・同一 `alivePlayers`・同一 RNG 状態では、`pickMidGameJoinSpawn` は必ず同じ座標を返す。
+
+#### 途中参加時の初期状態（テスト前提）
+
+- 途中参加プレイヤーの `level` は **1**。
+- 途中参加プレイヤーの `exp` は **0**。
+- 途中参加プレイヤーの `pendingRewardCount` は **0**。
+- 途中参加プレイヤーの inventory は**空**。
+- 途中参加プレイヤーの skill stack は**空**。
+- 途中参加プレイヤーの一時効果（dash / cats_eye / disposable_life / forceIgnition / erosion pause など）は**未付与**。
+- `pickInitialSpawnAssignments` / `pickMidGameJoinSpawn` により確定した座標は、いずれも**in-bounds かつ walkable**（`Safe`、fallback 時のみ `Wasteland`）でなければならない。
+
+---
+
+### § Respawn Placement 詳細
+
+#### `pickRespawnPlacement` の入力 / 出力
+
+- 入力:
+  - `grid: GridState`
+  - `alivePlayers: PlayerState[]`（`lifeState = PlayerLifeState.Alive` のみ）
+  - `rng`
+- 出力:
+  - `spawnCoord: GridCoord`
+  - `usedFallbackWasteland: boolean`
+
+#### アンカー選択
+
+- `alivePlayers.length = 0` の場合はエラーとする。
+- `alivePlayers` は `sessionId` 文字列昇順にソートしてから扱う。
+- `anchorIndex = rng.nextInt(alivePlayers.length)` によりアンカーを 1 人選ぶ。
+- アンカー位置のセル化は `anchorCell = { x: floor(player.x), y: floor(player.y) }` とする。
+- 同一入力・同一 RNG 状態では、アンカー選択結果も必ず一致しなければならない。
+
+#### 「周囲」の正式定義と探索順
+
+- 「周囲」は **Chebyshev 距離 2 以下**とする。
+- 探索順は `pickMidGameJoinSpawn` と同一で、**距離昇順 → 同距離内は `y` 昇順 → `x` 昇順**とする。
+- 同距離候補が複数ある場合は、その距離リングの候補集合に対して `rng.nextInt(candidateCount)` を 1 回だけ消費して選ぶ。
+
+#### セル種別フィルタ
+
+| 段階 | 許可セル | 禁止セル | `usedFallbackWasteland` |
+|---|---|---|---|
+| 第1候補 | `Safe` | `SafeMine`, `DangerousMine`, `Wasteland`, `Hole` | `false` |
+| 第2候補 | `Wasteland` | `SafeMine`, `DangerousMine`, `Hole` | `true` |
+| 全体 fallback | 近傍に候補がない場合のみ、グリッド全体から `Safe` → `Wasteland` の順で探索 | 同上 | 選ばれたセルが `Wasteland` のとき `true` |
+
+追加制約:
+
+- 任意の生存プレイヤーの現在セルと一致する座標は respawn 候補から除外する。
+- `Hole` へのリスポーンは常に禁止する。
+- `SafeMine` / `DangerousMine` へのリスポーンは常に禁止する。
+
+#### `pickRespawnPlacement` の完全手順
+
+1. アンカー周囲の `Safe` を探索する。
+2. 最初に見つかった距離リングの `Safe` 候補集合から 1 つ選ぶ。
+3. `Safe` 候補が 0 件なら、同じ探索規則で `Wasteland` を探索する。
+4. 近傍 `Wasteland` も 0 件なら、グリッド全体を行優先で走査し、`Safe` があればその集合から 1 つ選ぶ。
+5. グリッド全体の `Safe` も 0 件なら、グリッド全体の `Wasteland` から 1 つ選ぶ。
+6. `Safe` / `Wasteland` がどちらも存在しなければエラーとする。
+
+#### Wasteland fallback の厳密条件
+
+- `usedFallbackWasteland = true` になるのは、**最終選択セルの `cellType` が `Wasteland` の場合のみ**である。
+- fallback への遷移条件は「近傍 `Safe` 候補が 0 件」であり、試行回数ベースではない。
+- `Wasteland` リスポーンに専用 sprite / 専用無敵 / 専用スコア補正は存在しない。
+- `Wasteland` リスポーンの追加ペナルティは存在しない。適用される差分は、そのセルが `Wasteland` であることによる**通常の移動速度ペナルティのみ**である。
+
+#### `shortenAllPendingRespawns` / `shortenRespawnSchedule` の契約
+
+サーバー側の一括短縮処理 `shortenAllPendingRespawns` は、各保留 `RespawnEntry` に対して pure 関数 `shortenRespawnSchedule` を適用して再時刻化する。
+
+- トリガー: **蘇生短縮アイテムまたは蘇生短縮効果が実際に発動した瞬間のみ**。
+- 非トリガー: 他プレイヤー死亡時 / timer tick / floor clear。
+- 対象: その時点で `scheduledAt > now` を持つ**死亡中全プレイヤーの全 `RespawnEntry`**。
+- 計算式: `newScheduledAt = max(now, currentRespawnAt - shortenMs)`
+- 最小値床: `now`。`now` より前の時刻にはならない。
+- 効果は**死亡中全プレイヤーへ均等適用**する。プレイヤーごとの差は許可しない。
+- queue 更新は server の責務だが、更新後の `scheduledAt` は上記式と完全一致しなければならない。
+
+#### リスポーン後状態
+
+- 位置は `spawnCoord` のセル中心 `(x + 0.5, y + 0.5)` に配置する。
+- `lifeState = PlayerLifeState.Alive` に遷移する。
+- `respawnAt = 0` に戻す。
+- `player_respawned.spawnCoord` には、実際に配置したセルの `GridCoord` をそのまま送る。
+- リスポーン無敵時間は存在しない。
+- 死亡時に失った inventory は**復元しない**。死亡後の inventory は空のまま維持する。
+- death 確定時に cancel された `effect_expiry` は復元しない。dash / cats_eye / disposable_life / forceIgnition / erosion pause などの一時効果は**非アクティブ**状態で再開する。
+- skill stack は死亡・リスポーンで失われない。
+
+---
+
+### § Floor Transition Plan 詳細
+
+#### `buildFloorClearTransition` の入力 / 出力
+
+`buildFloorClearTransition` は、フロアクリア後の**現フロア後始末**と**次フロア開始準備**を 1 つの純粋な遷移計画として返す。
+
+入力:
+
+- `grid`: 現フロア盤面
+- `erosionState`: 現フロア侵食状態
+- `players`: 現在在籍プレイヤー一覧
+- `checkpoints`: 現フロアの CP 一覧
+- `timers`: 保留タイマーのスナップショット
+- `spawnAssignments`: 現フロア開始時に確定した `sessionId -> GridCoord`
+- `nextStage`: 次フロアの `StageDefinition`。Floor10 クリア時は `null` を許可する。
+- `config`, `rng`: `nextFloorStartPlan` を同時計算する場合のみ使用する
+
+出力:
+
+- `clearedGrid`: Step 3 適用後の現フロア盤面
+- `clearedErosionState`: warning を空にした現フロア侵食状態
+- `revivedPlayers`: Step 5 で `Alive` へ戻す `sessionId[]`。**文字列昇順**で返す。
+- `repositionBySessionId`: Step 6 で各プレイヤーを戻す `sessionId -> GridCoord`
+- `canceledTimerKinds`: 以下**固定順・固定内容**の配列
+  1. `"detonate_resolve"`
+  2. `"unmanaged_chain"`
+  3. `"erosion_warn"`
+  4. `"erosion_convert"`
+  5. `"respawn"`
+  6. `"item_expiry"`
+  7. `"effect_expiry"`
+  8. `"future_event"`
+- `nextFloorStartPlan`: 次フロア開始に必要な生成結果。`nextStage = null` の場合は `null`。
+
+前提条件:
+
+- `checkpoints` は**全件 `collected = true`**でなければならない。1 件でも未回収ならエラーとする。
+- `spawnAssignments` は `players` 内の**非 `Disconnected` 全員**に対して存在しなければならない。
+- `SimulationLoop` の停止はこの pure 関数の返り値には含めない。これは caller 側の適用責務であり、`canceledTimerKinds` にも含めない。
+
+#### Step Sequence（契約順序・変更内容）
+
+本契約の適用順序は次で固定する。**前後入替は禁止**。
+
+| Step | 処理 | 変更対象 | イベント | エラー条件 |
+|---|---|---|---|---|
+| 1 | 全 Checkpoint を回収済みとして正規化 | `checkpoints` の `collected` / `collectedBySessionId` | なし（`floor_cleared` は既に送信済み前提） | 未回収 CP があれば即エラー |
+| 2 | 全タイマー処理を停止（SimulationLoop 一時停止） | caller 側 runtime | なし | caller が停止しないまま Step 3 以降を適用してはならない |
+| 3 | `SafeMine` / `DangerousMine` を全 `Safe` に変換 | `grid` | なし | grid 不正参照 |
+| 4 | 保留中タイマーを全キャンセル | queue / `erosionState` / warning 表示 | 必要に応じて `detonate_fuse_canceled`, `erosion_warning_canceled` | timer snapshot 不正 |
+| 5 | 全死亡プレイヤーを復活 | `players` | なし | player state 不正 |
+| 6 | 各プレイヤーを初期スポーン位置へ配置 | `players` | なし | `spawnAssignments` 欠落 |
+| 7 | 休憩フェーズへ遷移 | `GamePhase` | `rest_phase_started` | Step 1〜6 未完了 |
+| 8 | 次フロア開始準備 | 次フロア plan | 次フロア適用時に `next_floor_started` | `nextStage` 欠落（Floor10 以外） |
+
+各 Step の厳密仕様:
+
+**Step 1: 全 Checkpoint を回収済みとしてマーク**
+
+- `checkpoints.every(cp => cp.collected === true)` を満たさない場合、以降の Step を一切実行せずエラーとする。
+- valid input ではこの Step は**正規化専用**であり、純粋出力の差分を必須としない。
+
+**Step 2: 全タイマーを停止（SimulationLoop 一時停止）**
+
+- これは queue 取消しより先に行う。
+- 目的は Step 3〜8 の適用中に detonate / unmanaged / erosion / respawn / expiry が進行しないことの保証である。
+- rules-core の返却値はこの停止命令自体を表現しない。caller は本仕様どおりに停止しなければならない。
+
+**Step 3: 地雷原セルを全て通常セルに変換**
+
+- すべての `SafeMine` / `DangerousMine` を `Safe` に変換する。
+- 変換対象セルでは `flagged = false`, `hasRelayPoint = false` にする。
+- 変換後の盤面に対して、全 `Safe` セルの `adjacentMineCount` を再計算する。結果として現フロアに地雷原が 0 件であれば、全 `Safe` セルの `adjacentMineCount = 0` になる。
+- `Wasteland` と `Hole` はこの Step では変換しない。
+
+**Step 4: 保留中のタイマーを全てキャンセル**
+
+- `canceledTimerKinds` は pending 件数に関係なく、前述の 8 種を**固定順で全件**返す。
+- `detonate_resolve` をキャンセルした実エントリごとに、server は `detonate_fuse_canceled` を `reason: FloorCleared` で送信しなければならない。
+- 侵食 warning が可視状態だった場合、server は `erosion_warning_canceled` を `reason: FloorCleared` で送信しなければならない。
+- `clearedErosionState.warningCellKeys` は空配列にする。
+- `clearedErosionState.nextWarningAt = 0`, `clearedErosionState.nextConversionAt = 0` とする。
+- `grid` 上の全 `erosionWarning` フラグを `false` にする。
+- `respawn` cancel により floor clear 時の通常リスポーンタイマーは**無効化**される。復活は必ず Step 5 で行う。
+
+**Step 5: 全死亡プレイヤーを復活**
+
+- 入力時点で `lifeState = PlayerLifeState.Ghost` のプレイヤーのみを対象とする。
+- `lifeState = PlayerLifeState.Disconnected` は対象外とする。
+- 対象プレイヤーは `lifeState = PlayerLifeState.Alive`, `respawnAt = 0` に変更する。
+- `level`, `exp`, `pendingRewardCount` は変更しない。
+- inventory は死亡時点の状態をそのまま維持する。通常死亡で空なら空のまま、死亡回避で保持済みならそのまま。
+- `player_respawned` は送信しない。floor clear 復活は通常リスポーンとは別経路である。
+
+**Step 6: 各プレイヤーを初期スポーン位置に配置**
+
+- 対象は入力時点で `Disconnected` ではない全プレイヤーとする。
+- 使用する座標は**そのフロア開始時に確定した `spawnAssignments`** であり、再抽選しない。
+- 位置反映時の `PlayerState.x / y` はセル中心 `(spawnCoord.x + 0.5, spawnCoord.y + 0.5)` とする。
+- `repositionBySessionId` は `sessionId` 文字列昇順で解釈可能でなければならない。
+
+**Step 7: 休憩フェーズへ遷移**
+
+- Step 1〜6 が完了するまでは `GamePhase.Rest` にしてはならない。
+- Step 7 完了時に `rest_phase_started` を 1 回だけ送信する。
+- この時点では `floorNumber` はまだ「クリアしたフロア番号」のままである。
+
+**Step 8: 次フロア開始準備**
+
+- `currentFloor < 10` の場合のみ `nextFloorStartPlan` を生成する。
+- `currentFloor = 10` の場合、`nextFloorStartPlan = null` とし、caller は `next_floor_started` ではなく `game_over(reason: Floor10Cleared)` へ進む。
+- `nextFloorStartPlan` の適用と `next_floor_started` 送信は、Step 7 完了後にのみ行ってよい。
+
+#### EXP / Level / Skill Stack 持ち越し
+
+- フロア遷移前後で `exp` は**1 も変化してはならない**。
+- フロア遷移前後で `level` は**1 も変化してはならない**。
+- skill stack は**完全保持**する。
+- inventory は floor transition 自体では変更しない。死亡済みプレイヤーの inventory が空なのは**死亡ルールの結果**であり、フロア遷移の副作用ではない。
+- `pendingRewardCount` は保持する。
+
+#### `buildNextFloorStartPlan` の契約
+
+入力:
+
+- `nextStage`
+- 次フロア参加対象 `sessionIds`
+- `playerCount`
+- `config`
+- `rng`
+
+出力:
+
+- `generatedGrid`
+- `checkpoints`
+- `spawnAssignments`
+
+規則:
+
+- `generatedGrid` は `nextStage` の `boardProfile`, `holeCoords`, 設定値から再生成する。現フロア `grid` を流用してはならない。
+- `checkpoints` は `nextStage.cpCandidateCoords` から再選定する。
+- `spawnAssignments` は `nextStage.spawnGroups` に対して **`pickInitialSpawnAssignments` を再実行して決定**する。
+- `sessionIds` は caller の入力順ではなく、`pickInitialSpawnAssignments` 内のソート規則に従って扱う。
+- `buildFloorClearTransition` が `nextFloorStartPlan` を内包して返す場合と、caller が Step 7 後に `buildNextFloorStartPlan` を別途呼ぶ場合で、**同じ入力なら同じ結果**にならなければならない。
+
+#### エッジケース
+
+| ケース | 契約 |
+|---|---|
+| プレイヤーが遷移中に切断 | `Disconnected` は `revivedPlayers` に含めない。`repositionBySessionId` の適用対象にも含めない。再接続処理自体は Room Lifecycle の契約に従い、この関数では扱わない。 |
+| 侵食 warning / convert が進行中 | Step 2 で進行停止し、Step 4 で `erosion_warn` / `erosion_convert` を cancel し、warning 表示を全消去する。 |
+| Detonate fuse が進行中 | Step 4 で `detonate_resolve` を cancel する。実エントリごとに `detonate_fuse_canceled(reason: FloorCleared)` の送信対象となる。 |
+| 地上ドロップが地雷原セル上に存在 | Step 3 の safe 化それ自体では `GroundItemState` を変更しない。旧フロアの `groundItems` は `next_floor_started` 適用時に新フロア状態へ持ち越してはならない。 |
+| `spawnAssignments` 欠落 / 重複 | Step 6 適用前にエラーとする。欠落補完や再抽選は行わない。 |
+
+---
+
 ## Ambiguities / TODO(confirm)
 
 本文へ取り込める GDD 由来ルールは反映済み。以下のみ、GDD 上でも未確定または API 表現に追加の設計判断が必要なため保留とする。
