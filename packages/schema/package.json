@@ -1,23 +1,23 @@
 {
-	"name": "@detonator/schema",
-	"version": "0.0.0",
-	"private": true,
-	"type": "module",
-	"main": "./dist/index.js",
-	"types": "./dist/index.d.ts",
-	"exports": {
-		".": {
-			"import": "./dist/index.js",
-			"types": "./dist/index.d.ts"
-		}
-	},
-	"scripts": {
-		"build": "tsc -p tsconfig.json",
-		"typecheck": "tsc -p tsconfig.json --noEmit",
-		"test": "vitest run"
-	},
-	"dependencies": {
-		"@colyseus/schema": "^4.0.19",
-		"@detonator/protocol": "workspace:*"
-	}
+  "name": "@detonator/schema",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@colyseus/schema": "^4.0.19",
+    "@detonator/protocol": "workspace:*"
+  }
 }

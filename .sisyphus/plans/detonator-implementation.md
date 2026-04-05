@@ -1064,8 +1064,9 @@ Max Concurrent: 6 (Waves 12, 14)
   - [ ] Test: widthCap に達したとき新 frontline を再探索する
   - [ ] Test: targetCoords に盤面上の Wasteland が含まれる
   - [ ] Test: applyErosionConversion が safeMineRatio / dangerousMineRatio に従って変換する
-  - [ ] Test: applyErosionConversion 後の adjacentMineCount が正しく再計算される (0→非0 更新含む)
-  - [ ] Test: 同一 seed で同一結果 (deterministic)
+   - [ ] Test: applyErosionConversion 後の adjacentMineCount が正しく再計算される (0→非0 更新含む)
+   - [ ] Test: 同一 seed で同一結果 (deterministic)
+   - [ ] Test: floor clear flush で `clearAllErosionWarnings(grid, erosionState)` を呼び出し `warningCellKeys` が空になる (Phase A Decision #4 準拠)
   - [ ] `pnpm --filter @detonator/rules-core test` → PASS
 
   **QA Scenarios (MANDATORY):**
@@ -1141,8 +1142,9 @@ Max Concurrent: 6 (Waves 12, 14)
   - [ ] Test: pickInitialSpawnAssignments が spawn group に従って割り当てる
   - [ ] Test: pickMidGameJoinSpawn が生存プレイヤー周辺の安全マスを返す
   - [ ] Test: pickRespawnPlacement が荒地 fallback を返す (安全マスなし時)
-  - [ ] Test: buildFloorClearTransition が API 指定順序の canceledTimerKinds を返す
-  - [ ] Test: buildNextFloorStartPlan が grid + CP + spawn を返す
+   - [ ] Test: buildFloorClearTransition が API 指定順序の canceledTimerKinds を返す
+   - [ ] Test: フロア遷移後に全プレイヤーの exp / level が保持される（累積EXPモデル / Phase A Decision #2）
+   - [ ] Test: buildNextFloorStartPlan が grid + CP + spawn を返す
   - [ ] Test: shortenRespawnSchedule が正しく短縮する
   - [ ] `pnpm --filter @detonator/rules-core test` → PASS
 
@@ -1629,8 +1631,9 @@ Max Concurrent: 6 (Waves 12, 14)
   - `src/rooms/detonator/systems/session/JoinService.ts`: createFreshPlayer, createMidGameJoin (Lv1 / item なし / skill なし 初期化) — be-dev-plan §10
   - `src/rooms/detonator/systems/session/ReconnectService.ts`: handleDrop (PlayerLifeState.Disconnected + 60s deadline), handleReconnect (client registry 差し替え、危険位置補正、private resync), handleFinalLeave (voluntary/timeout 確定、player 削除) — be-dev-plan §10
   - `src/rooms/detonator/commands/registerCommandHandlers.ts`: 全 7 コマンドの `this.onMessage()` 登録 — be-dev-plan §4
-  - `src/rooms/detonator/commands/commandGuards.ts`: phase / alive / slot / range / finite number 共通検証 — be-dev-plan §4.2.1
-  - `src/rooms/detonator/commands/handleMove.ts`: 入力ベクトル受信、正規化、latest input 更新
+   - `src/rooms/detonator/commands/commandGuards.ts`: phase / alive / slot / range / finite number 共通検証 — be-dev-plan §4.2.1
+     - **alive チェックの方針 (Phase A 決定)**: `commandGuards` は全コマンド（dig含む）に対して汎用 `PlayerLifeState.Alive` ガードを実施する。`resolveDig` (rules-core 純関数) 内部にも独自の Alive チェックが存在する（Phase A Decision #5 → `ErrorCode.DigNotAlive`）。これは **defense-in-depth** 設計であり二重チェックは意図的。`commandGuards` が先にフィルタした場合 `resolveDig` の Alive チェックは到達不可コードとなるが、rules-core が server に依存しないため独自バリデーションを持つのは正しい。クライアントは両 ErrorCode をハンドリング可能。
+   - `src/rooms/detonator/commands/handleMove.ts`: 入力ベクトル受信、正規化、latest input 更新
   - `src/rooms/detonator/commands/handleDig.ts`: 掘削受付、SafeMine / DangerousMine 分岐
   - `src/rooms/detonator/commands/handleFlag.ts`: flag トグル
   - `src/rooms/detonator/commands/handleDetonate.ts`: CT/対象検証
@@ -2846,24 +2849,276 @@ Max Concurrent: 6 (Waves 12, 14)
 
 ---
 
-## Commit Strategy
-### **Use jujutsu instead of git**
+## Jujutsu (jj) コミット戦略
 
-- **Wave 1**: `chore: monorepo setup with pnpm + Turborepo + Biome + Vitest`
-- **Wave 2**: `feat(protocol): enum / interface / command / event / timer / constant contracts`
-- **Wave 3**: `feat(config): type definitions and game-params.json` + `feat(schema): Colyseus shared state classes`
-- **Wave 4**: `feat(config): gameplay data (items/skills/stages/rewards)` + `feat(schema): utility helpers and tests`
-- **Wave 5**: `feat(rules-core): grid / movement / facing / collision foundation`
-- **Wave 6**: `feat(rules-core): dig / flood-fill / drop / progression / inventory`
-- **Wave 7**: `feat(rules-core): detonate / explosion / erosion systems`
-- **Wave 8**: `feat(rules-core): lifecycle / reward / scoring`
-- **Wave 9**: `chore: shared package integration review` + `feat(server): room foundation`
-- **Wave 10**: `feat(server): LobbyRoom + DetonatorRoom + floor bootstrap`
-- **Wave 11**: `feat(server): inventory / EXP / drop services + client board rendering + player layer`
-- **Wave 12**: `feat(server): death / checkpoint / detonate / explosion / erosion + client input + HUD`
-- **Wave 13**: `feat(server): respawn / reward / skill + client CP / ground item / FX`
-- **Wave 14**: `feat(server): floor transition / item effects / claim / discard / reconnect + client reward + targeting + toast`
-- **Wave 15**: `feat(client): Lobby / Rest / GameOver scenes + audio` + `test(server): integration tests` + `test(client): integration + E2E`
+> **このプロジェクトは jujutsu (jj) を VCS として使用する。** 以下は Phase B 実装全体を通じた jj 操作の完全な仕様である。
+> 各 Task の「Commit: YES」セクションに記載のメッセージは、ここで定義する jj ワークフローの中で使用される。
+
+---
+
+### 1. 現状分析
+
+| 項目 | 値 |
+|---|---|
+| VCS | jujutsu (jj) |
+| Trunk bookmark | `main` → `091b68b8` (`chore(main): start dev 9/43`) |
+| Working copy change | `zxnnvnxk` (no description) — **Phase A の全変更が未コミット** |
+| リモート設定 | `remotes.origin.auto-track-bookmarks = "glob:*"` |
+| Trunk alias | `revset-aliases."trunk()" = "main@origin"` |
+
+**Phase A 未コミット変更の内訳**:
+- packages/protocol: enum-values test + shape-contracts test (新規)
+- packages/config: validateConfig 拡張 + items.json 修正 + game-params.json 調整
+- packages/schema: utils/reset.ts 修正 (exp累積 + erosionState param)
+- packages/rules-core: resolve-dig alive check + roll-drop TODO + 全テスト書き直し (12ファイル)
+- docs/: api.md 仕様強化 (15セクション) + レポート4件
+- プロジェクト設定: biome.json, turbo.json, tsconfig 更新
+
+---
+
+### 2. 基本方針
+
+#### 2.1 Stack-based ワークフロー
+```
+main (trunk)
+├── [baseline] Phase A コミット（即時実行）
+├── [T10]      feat(rules-core): detonate preview and chain resolution
+├── [T11]      feat(rules-core): unmanaged explosion trigger and BFS chain
+├── [T12]      feat(rules-core): erosion warning planning and conversion
+├── [T13]      feat(rules-core): lifecycle — checkpoint, spawn, respawn, floor transition
+├── [T14]      feat(rules-core): reward offer/apply and floor scoring
+├── [T15]      test(shared): integration review and golden tests
+├── [T16]      feat(server): foundation — config, rulesFacade, RoomContext, queue, private store
+├── [T17]      ci: update lint/typecheck/test/build pipeline for all packages
+├── [T18]      feat(server): LobbyRoom, DetonatorRoom shell, FloorBootstrap, DeathService entry
+├── [T19]      feat(client): Phaser foundation, scenes, Colyseus connection, reconnect
+├── [T20]      feat(server): JoinService, ReconnectService, and 7 command handlers
+├── [T21]      feat(server): MovementSystem, dig/flag gameplay, CP collection, item pickup
+├── [T22]      feat(client): schema binding, selectors, private state store, 38 event handlers
+├── [T23]      feat(server): InventoryService, DropService, ExpService
+├── [T24]      feat(server): DeathService completion and CheckpointService full flow
+├── [T25]      feat(client): board rendering — GridLayer, NumberTextLayer, CameraController
+├── [T26]      feat(client): PlayerLayer rendering and input devices (Keyboard + Joystick + Buttons)
+├── [T27]      feat(server): DetonateService and UnmanagedExplosionService
+├── [T28]      feat(server): ErosionService with warning, conversion, and pause control
+├── [T29]      feat(client): inputMapper, CommandDispatcher, facingResolver, targetingController
+├── [T30]      feat(client): HUD — PlayerHudPanel, ExpBar, InventoryBar, ScorePanel, FloorInfoPanel
+├── [T31]      feat(server): RespawnService and DeathService completion with effect cleanup
+├── [T32]      feat(server): FloorTransitionService, ScoreService, and Floor10 game over
+├── [T33]      feat(server): RewardService and SkillService
+├── [T34]      feat(client): CpLayer, visibility utils, and GroundItemLayer
+├── [T35]      feat(client): FX layers — Detonate, Unmanaged, Erosion, ScreenFx
+├── [T36]      feat(server): 13 use_item effects and use_item completion (nine_lives owned by DeathService)
+├── [T37]      feat(server): claim_reward and discard_item completion
+├── [T38]      feat(server): mid-game join and reconnect completion
+├── [T39]      feat(client): RewardOfferPanel, TargetingOverlay, NotificationToast, MultiplayerNotice
+├── [T40]      feat(client): Lobby, Rest, GameOver scenes complete
+├── [T41]      feat(client): Audio — SFX catalog, BGM controller, AudioUnlock overlay
+├── [T42]      test(server): integration tests — 2P flow, mid-game join, reconnect, detonate/erosion chains
+├── [T43]      test(client): integration + E2E via Playwright
+└── [FINAL]    chore: final review cleanup before merge
+```
+
+#### 2.2 ルール
+| ルール | 詳細 |
+|---|---|
+| **1 Task = 1 change** | 各 Task 完了時に `jj describe` でコミットメッセージを設定 |
+| **Conventional Commits** | `type(scope): description` 形式（scope はパッケージ名） |
+| **Pre-commit 検証** | 該当パッケージの `pnpm --filter <pkg> test` が PASS すること |
+| **Bookmark 進行** | 各 Wave 完了時に `jj bookmark set main -r .` で trunk を進める |
+| **並列 Wave の扱い** | Agent は逐次実行するため、並列タスクも依存順に線形スタックで積む |
+| **`jj new` タイミング** | Task 開始直前（実装前に新しい change を作成） |
+| **絶対にしないこと** | `jj abandon` （履歴消失リスク）、`jj force` （破壊的操作）、`--no-backup` |
+
+---
+
+### 3. 即時実行 — Phase A ベースラインコミット
+
+Phase B を開始する前に、現在の wc（`zxnnvnxk`）をベースラインとして確定させる。
+
+```bash
+# 1. 現在の変更内容を確認
+jj st
+jj diff --stat
+
+# 2. ベースラインコミットメッセージを設定
+jj describe -m "test(phase-a): spec-driven test suite with api.md enhancements and code fixes
+
+- 188 tests across 4 packages (protocol/config/schema/rules-core)
+- api.md: 15 formal spec sections added (speed/skill/exp/leveling/flood-fill/
+  neighbors/collision/drop/facing/frontline/inventory/cp/detection)
+- Code fixes: cumulative EXP model (#2), erosionState clear param (#4),
+  dig alive guard #5, evacuation spawn-selection (#1), roll-drop TODO (#6)
+- Test rewrites: 12 mirror/mixed files → spec-driven (Groups 1-3 + Step 4)
+- Reports: gap-analysis, implementation-report, phase-b-preparation-audit"
+
+# 3. bookmark を作成（main は進めない — push 対象外の docs-only 変更含むため）
+jj bookmark create phase-a-baseline
+
+# 4. 新しい working copy を Phase B 用に準備
+jj new
+# → これ以降、Phase B の T10 から実装開始
+```
+
+> **注意**: `phase-a-baseline` bookmark はローカル参照用。`main` への push は Phase B の各 Wave完了時に行う。
+
+---
+
+### 4. 各 Task の標準 jj 操作手順
+
+すべての Task（Commit: YES のもの）で以下の手順を実行する：
+
+```
+┌─────────────────────────────────────────────────────┐
+│  Task N 開始                                        │
+│                                                     │
+│  ① jj new                                           │
+│     → 新しい空 change を現在の head に作成            │
+│     → working copy がクリーンな状態になる             │
+│                                                     │
+│  ② 実装 + テスト記述 (RED→GREEN→REFACTOR)           │
+│     → ファイル編集                                   │
+│                                                     │
+│  ③ pnpm --filter <pkg> test                         │
+│     → テスト失敗 → ② に戻る                          │
+│     → テスト通過 → 次へ                              │
+│                                                     │
+│  ④ jj describe -m "<message>"                       │
+│     → Task の「Commit」セクションに記載のメッセージ   │
+│                                                     │
+│  ⑤ (オプション) jj diff --from @--                   │
+│     → 差分を確認                                     │
+│                                                     │
+│  ⑥ Task 完了 → 次 (Task N+1) に戻る                 │
+└─────────────────────────────────────────────────────┘
+```
+
+**Commit: NO のタスク**（F1-F4）は `jj new` せず、最後の change 上で作業する。
+
+---
+
+### 5. Wave 完了時の操作
+
+各 Wave の全 Task 完了後に以下を実行：
+
+```bash
+# 1. 全パッケージテスト検証
+pnpm test
+
+# 2. main bookmark を進める
+jj bookmark set main -r .
+
+# 3. 確認
+jj log --no-pager -r 'main..' -r 'main' --limit 3
+```
+
+**Wave 単位 squash（オプション）**:
+```bash
+# Wave 6 (T10-T12) を 1 つにまとめたい場合:
+jj squash --from 'description("feat(rules-core): detonate")' \
+          --into 'description("feat(rules-core): unmanaged")'
+jj describe -m "feat(rules-core): explosive systems — detonate, unmanaged explosion, erosion"
+```
+> **デフォルトでは squash しない**。Task 単位の粒度を維持し、レビュー・rebase・bisect の容易さを優先。
+
+---
+
+### 6. 並列 Wave での jj 扱い
+
+Plan 上の「並列可能」タスクも、Agent は逐次実行するため**常に線形スタック**とする。
+
+例: Wave 6（T10/T11/T12 並列）の実際のスタック順序:
+```
+[T10] detonate     ← Critical Path 優先
+[T11] explosion    ← T10 に依存（T8 のみだが detonate と密接連関）
+[T12] erosion      ← T10/T11 とは独立（T8 までにブロック解除）
+```
+
+**依存解決順序のルール**:
+1. Critical Path 上のタスクを優先
+2. 同一 Wave 内では Task 番号昇順
+3. Blocker 解除が早いタスクを先行
+
+---
+
+### 7. 完全コミットメッセージ一覧
+
+| # | Change ID (予定) | Message | Scope | Files (主要) |
+|---|---|---|---|---|
+| baseline | `phase-a-baseline` | `test(phase-a): spec-driven test suite — 188 tests, 15 spec sections, 6 fixes, 12 rewrites` | phase-a | docs/, packages/*/test/*, packages/*/src/* |
+| T10 | — | `feat(rules-core): detonate preview and chain resolution` | rules-core | `src/detonate/*.ts`, `test/detonate.test.ts` |
+| T11 | — | `feat(rules-core): unmanaged explosion trigger and BFS chain resolution` | rules-core | `src/explosion/*.ts`, `test/unmanaged-explosion.test.ts` |
+| T12 | — | `feat(rules-core): erosion warning planning and conversion application` | rules-core | `src/erosion/*.ts`, `test/erosion.test.ts` |
+| T13 | — | `feat(rules-core): checkpoint, spawn, respawn, and floor transition logic` | rules-core | `src/checkpoint/*.ts`, `src/lifecycle/*.ts`, `test/lifecycle.test.ts` |
+| T14 | — | `feat(rules-core): reward offer/apply and floor scoring` | rules-core | `src/reward/*.ts`, `src/scoring/*.ts`, `test/reward.test.ts` |
+| T15 | — | `test(shared): integration review and golden tests for all shared packages` | shared | `packages/*/test/*.test.ts` |
+| T16 | — | `feat(server): foundation — config, rulesFacade, RoomContext, queue, private store` | server | `apps/server/src/**/*.ts`, `apps/server/test/*.test.ts` |
+| T17 | — | `ci: update lint/typecheck/test/build pipeline for all packages` | ci | `.github/workflows/ci.yml`, `turbo.json` |
+| T18 | — | `feat(server): LobbyRoom, DetonatorRoom shell, FloorBootstrap, DeathService entry, CheckpointService` | server | `apps/server/src/rooms/**/*.ts`, `apps/server/src/systems/**/*.ts` |
+| T19 | — | `feat(client): Phaser foundation, scenes, Colyseus connection, and reconnect` | client | `apps/client/src/**/*.ts`, `apps/client/index.html`, `apps/client/vite.config.ts` |
+| T20 | — | `feat(server): JoinService, ReconnectService, and 7 command handlers` | server | `apps/server/src/rooms/detonator/systems/session/*.ts`, `commands/*.ts` |
+| T21 | — | `feat(server): MovementSystem, dig/flag gameplay, CP collection, item pickup` | server | `apps/server/src/rooms/detonator/systems/movement/*.ts`, `commands/handleDig.ts`, `handleFlag.ts` |
+| T22 | — | `feat(client): schema binding, selectors, private state store, 38 event handlers` | client | `apps/client/src/net/**/*.ts`, `apps/client/src/state/**/*.ts` |
+| T23 | — | `feat(server): InventoryService, DropService, ExpService` | server | `apps/server/src/rooms/detonator/systems/item/*.ts`, `progression/ExpService.ts` |
+| T24 | — | `feat(server): DeathService completion and CheckpointService full flow` | server | `apps/server/src/rooms/detonator/systems/life/DeathService.ts`, `checkpoint/CheckpointService.ts` |
+| T25 | — | `feat(client): board rendering — GridLayer, NumberTextLayer, CameraController` | client | `apps/client/src/render/board/*.ts` |
+| T26 | — | `feat(client): PlayerLayer rendering and input devices (Keyboard + Joystick + Buttons)` | client | `apps/client/src/render/player/*.ts`, `input/*.ts` |
+| T27 | — | `feat(server): DetonateService and UnmanagedExplosionService` | server | `apps/server/src/rooms/detonator/systems/explosion/*.ts` |
+| T28 | — | `feat(server): ErosionService with warning, conversion, and pause control` | server | `apps/server/src/rooms/detonator/systems/erosion/ErosionService.ts` |
+| T29 | — | `feat(client): inputMapper, CommandDispatcher, facingResolver, targetingController` | client | `apps/client/src/input/*.ts` |
+| T30 | — | `feat(client): HUD — PlayerHudPanel, ExpBar, InventoryBar, ScorePanel, FloorInfoPanel` | client | `apps/client/src/ui/hud/*.ts` |
+| T31 | — | `feat(server): RespawnService and DeathService completion with effect cleanup` | server | `apps/server/src/rooms/detonator/systems/life/RespawnService.ts` |
+| T32 | — | `feat(server): FloorTransitionService, ScoreService, and Floor10 game over` | server | `apps/server/src/rooms/detonator/systems/floor/*.ts` |
+| T33 | — | `feat(server): RewardService and SkillService` | server | `apps/server/src/rooms/detonator/systems/progression/*.ts` |
+| T34 | — | `feat(client): CpLayer, visibility utils, and GroundItemLayer` | client | `apps/client/src/render/board/CpLayer.ts`, `GroundItemLayer.ts`, `utils/visibility.ts` |
+| T35 | — | `feat(client): FX layers — Detonate, Unmanaged, Erosion, ScreenFx` | client | `apps/client/src/render/fx/*.ts` |
+| T36 | — | `feat(server): 13 use_item effects and use_item completion (nine_lives owned by DeathService)` | server | `apps/server/src/rooms/detonator/systems/item/effect/*.ts`, `ItemEffectService.ts` |
+| T37 | — | `feat(server): claim_reward and discard_item completion` | server | `apps/server/src/commands/handleClaimReward.ts`, `handleDiscardItem.ts` |
+| T38 | — | `feat(server): mid-game join and reconnect completion` | server | `apps/server/src/rooms/detonator/systems/session/*.ts` |
+| T39 | — | `feat(client): RewardOfferPanel, TargetingOverlay, NotificationToast, MultiplayerNotice` | client | `apps/client/src/ui/hud/RewardOfferPanel.ts`, `ui/overlays/*.ts` |
+| T40 | — | `feat(client): Lobby, Rest, GameOver scenes complete` | client | `apps/client/src/scenes/*.ts`, `ui/lobby/*.ts` |
+| T41 | — | `feat(client): Audio — SFX catalog, BGM controller, AudioUnlock overlay` | client | `apps/client/src/audio/*.ts`, `ui/overlays/AudioUnlockOverlay.ts` |
+| T42 | — | `test(server): integration tests — 2P flow, mid-game join, reconnect, detonate/erosion chains` | server-test | `apps/server/test/integration/*.test.ts` |
+| T43 | — | `test(client): integration + E2E via Playwright` | client-test | `apps/client/test/**/*.spec.ts`, `test/e2e/*.test.ts` |
+| FINAL | — | `chore: final review cleanup — lint, typecheck, evidence collection` | cleanup | `.sisyphus/evidence/**` |
+
+---
+
+### 8. トラブルシューティング
+
+#### 8.1 Task 中に方針転換が必要になった場合
+```bash
+# 現在の change を破棄してやり直す
+jj abandon
+# → 親 change に戻る。再度 jj new から開始
+```
+
+#### 8.2 前の Task に追加修正が必要になった場合
+```bash
+# 直前の change を編集
+jj edit @--
+# → その change の working copy になる
+# 修正後、jj describe でメッセージ更新可能
+# 戻る時: jj edit <元のchange>
+```
+
+#### 8.3 スタック順序を変えたい場合
+```bash
+# T11 と T12 の順序を入れ替える
+jj rebase -s <T11-change-id> -d <T12-change-id>
+```
+
+#### 8.4 main に push するタイミング
+- **各 Wave 完了時**: `jj git push --bookmark main` でリモート反映
+- **緊急バックアップ**: 任意のタイミングで `jj git push --bookmark phase-N-backup` 可能
+- **push 前必須**: `pnpm test && pnpm build` が PASS すること
+
+#### 8.5 衝突が起きた場合（リモート main が進んでいる）
+```bash
+jj pull --from remote
+# → jj が自動的に rebase する
+# 衝突がある場合は手動解決 → jj resolve
+```
 
 ---
 

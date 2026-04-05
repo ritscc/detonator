@@ -1,16 +1,16 @@
 {
-	"name": "@detonator/client",
-	"version": "0.0.0",
-	"private": true,
-	"type": "module",
-	"scripts": {
-		"dev": "vite",
-		"build": "tsc -p tsconfig.json --noEmit && vite build",
-		"typecheck": "tsc -p tsconfig.json --noEmit",
-		"test": "vitest run",
-		"preview": "vite preview"
-	},
-	"devDependencies": {
-		"vite": "^5.4.11"
-	}
+  "name": "@detonator/client",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -p tsconfig.json --noEmit && vite build",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "preview": "vite preview"
+  },
+  "devDependencies": {
+    "vite": "^5.4.11"
+  }
 }

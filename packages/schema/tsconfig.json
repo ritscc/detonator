@@ -1,16 +1,20 @@
 {
-	"extends": "../../tsconfig.base.json",
-	"compilerOptions": {
-		"outDir": "dist",
-		"rootDir": "src",
-		"composite": false,
-		"declaration": true,
-		"declarationMap": true,
-		"experimentalDecorators": true,
-		"useDefineForClassFields": false,
-		"module": "NodeNext",
-		"moduleResolution": "NodeNext",
-		"skipLibCheck": true
-	},
-	"include": ["src"]
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "dist",
+    "rootDir": "src",
+    "composite": false,
+    "declaration": true,
+    "declarationMap": true,
+    "experimentalDecorators": true,
+    "useDefineForClassFields": false,
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "skipLibCheck": true,
+    "paths": {
+      "@detonator/protocol": ["../protocol/dist/index.d.ts"]
+    }
+  },
+  "include": ["src"],
+  "exclude": ["src/protocol-shim.d.ts"]
 }

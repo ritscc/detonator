@@ -1,12 +1,12 @@
 {
-	"extends": "./tsconfig.base.json",
-	"compilerOptions": {
-		"paths": {
-			"@detonator/protocol": ["./packages/protocol/src/index.ts"],
-			"@detonator/config": ["./packages/config/src/index.ts"],
-			"@detonator/schema": ["./packages/schema/src/index.ts"],
-			"@detonator/rules-core": ["./packages/rules-core/src/index.ts"]
-		}
-	},
-	"exclude": ["node_modules", "dist"]
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "paths": {
+      "@detonator/protocol": ["./packages/protocol/src/index.ts"],
+      "@detonator/config": ["./packages/config/src/index.ts"],
+      "@detonator/schema": ["./packages/schema/src/index.ts"],
+      "@detonator/rules-core": ["./packages/rules-core/src/index.ts"]
+    }
+  },
+  "exclude": ["node_modules", "dist"]
 }

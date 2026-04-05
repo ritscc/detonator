@@ -1518,7 +1518,7 @@ export interface NextFloorStartedEvent {
 
 補足:
 
-- 持ち越し: **スキル、アイテム**。
+- 持ち越し: **スキル、アイテム、EXP/レベル**（累積モデル）。
 - リセット: **フラグ、地形、プレイヤー位置、CT、バフ、一時効果**。
 - クリア遷移全体は「全 CP → タイマー停止 → 地雷原消滅 → 保留キャンセル → 全員復活 → 初期位置 → 休憩 → 次フロア」の順で進む。
 - フロア10クリア時は `next_floor_started` へ進まず、`game_over`（`reason: GameOverReason.Floor10Cleared`）で終了する。
@@ -2389,6 +2389,419 @@ export type {
   ScoreUpdatedEvent,
 };
 ```
+
+---
+
+## ゲームルール詳細仕様（rules-core 契約定義）
+
+> 本セクションは `packages/rules-core` が提供する各計算モジュールの正式な契約を定義する。
+> テストはこの仕様のみから期待値を導出できなければならない。実装がこの仕様から逸脱した場合はバグである。
+
+---
+
+### § 速度計算詳細
+
+#### 定義
+
+プレイヤーの最終移動速度 `finalSpeed`（セル/秒）は以下の式で決定する。
+
+```
+S_base = movement.baseCellsPerSec              （デフォルト: 2）
+R_boost = movementSpeedBoostRatio              （スキルスタックから集約された移動速度ブースト比率）
+M_wasteland = movement.wastelandSpeedMultiplier （デフォルト: 0.4）
+R_reduction = wastelandPenaltyReductionRatio   （スキルスタックから集約された荒地ペナルティ軽減比率）
+M_dash = movement.dashSpeedMultiplier           （デフォルト: 1.5）
+```
+
+#### 計算手順
+
+1. **速度ブースト適用**: `speed = S_base × (1 + R_boost)`
+2. **荒地ペナルティ適用**（プレイヤーが荒地上にいる場合のみ）:
+   ```
+   effectiveMultiplier = M_wasteland + (1 − M_wasteland) × R_reduction
+   speed = speed × effectiveMultiplier
+   ```
+   - `R_reduction = 0` のとき `effectiveMultiplier = M_wasteland`（ペナルティ最大）
+   - `R_reduction = 1` のとき `effectiveMultiplier = 1`（ペナルティ完全無効化）
+3. **ダッシュ適用**（ダッシュアクティブ時のみ）: `speed = speed × M_dash`
+
+#### 乗算順序
+
+乗算は必ず上記の順序（ブースト → 荒地 → ダッシュ）で適用する。荒地とダッシュは条件付きであり、条件を満たさない場合は各倍率が `1` として扱われるのではなく、乗算自体がスキップされる。
+
+#### 検証例
+
+| 条件 | R_boost | R_reduction | 荒地 | ダッシュ | 期待速度 |
+|---|---|---|---|---|---|
+| 素の状態 | 0 | 0 | × | × | 2.0 |
+| 荒地のみ | 0 | 0 | ○ | × | 0.8 |
+| 全修飾子適用 | 0.5 | 0.5 | ○ | ○ | 3.15 |
+| 荒地ペナルティ完全無効化 | 0.25 | 1.0 | ○ | × | 2.5 |
+
+---
+
+### § スキル集約と単位変換
+
+#### 概要
+
+スキルスタック（`SkillStackEntry[]`）は集約関数によって各スキルタイプごとの合計効果値に統合され、最終的にゲームシステムが消費するモディファイアセットに変換される。
+
+#### 集約ルール
+
+1. **同一スキルタイプの加算**: 同じ `skillType` を持つ複数の `SkillStackEntry` の `effectValue` は加算される。
+2. **単位変換**: 加算後の合計値を、スキル定義（`skills.json`）の `valueRoll.unit` に基づき変換する。
+
+#### 単位変換規則
+
+| unit | 変換式 | 例 |
+|---|---|---|
+| `"percent"` | `value / 100` → ratio | effectValue=6, unit="percent" → 0.06 |
+| `"seconds"` | そのまま | effectValue=1.5 → 1.5 秒 |
+| `"multiplier"` | そのまま | effectValue=0.15 → 0.15 |
+| `"cells"` | そのまま | effectValue=0.5 → 0.5 セル |
+| `"flat"` | そのまま | effectValue=1 → 1 |
+
+#### スキルタイプと出力フィールドの対応
+
+| SkillType | 出力フィールド | unit |
+|---|---|---|
+| `movement_speed_boost` | `movementSpeedBoostRatio` | percent |
+| `detonate_cooldown_reduction` | `detonateCooldownReductionSec` | seconds |
+| `exp_gain_boost` | `expGainBoostRatio` | percent |
+| `combo_multiplier_boost` | `comboMultiplierBonus` | multiplier |
+| `erosion_cooldown_increase` | `erosionCooldownIncreaseRatio` | percent |
+| `item_drop_rate_boost` | `itemDropRateBoostRatio` | percent |
+| `item_pickup_range_boost` | `itemPickupRangeBoostCells` | cells |
+| `item_slot_increase` | `itemSlotIncreaseCount` | flat |
+| `cp_detection_range_boost` | `cpDetectionRangeBoostCells` | cells |
+| `erosion_forewarning` | `erosionForewarningSec` | seconds |
+| `death_item_keep_chance` | `deathItemKeepChanceRatio` | percent |
+| `wasteland_speed_reduction` | `wastelandPenaltyReductionRatio` | percent |
+| `respawn_time_reduction` | `respawnReductionSec` | seconds |
+| `chord` | `chordOwned = true` | （boolean、effectValue 無視） |
+
+#### デフォルト値
+
+スキルスタックが空の場合、すべての数値フィールドは `0`、`chordOwned` は `false` を返す。
+
+#### エラー条件
+
+- スキル定義（`skills.json`）に存在しない `skillType` がスタック内にある場合、エラーを送出する。
+
+#### 速度計算との統合例
+
+`MovementSpeedBoost(effectValue=6)` → unit="percent" → `6/100 = 0.06`
+→ `speed = 2 × (1 + 0.06) = 2.12`
+
+`MovementSpeedBoost(effectValue=2)` + `MovementSpeedBoost(effectValue=6)` → 合計 `8`
+→ `8/100 = 0.08` → `speed = 2 × (1 + 0.08) = 2.16`（荒地・ダッシュなし時）
+
+---
+
+### § 経験値計算詳細
+
+#### Dig EXP
+
+セル掘削による EXP 獲得量:
+
+```
+digExp = floor(revealedCellCount × baseExpPerCell × (1 + expGainBoostRatio))
+```
+
+- `baseExpPerCell`: 設定値（デフォルト: `1`）
+- `revealedCellCount`: フラッドフィルにより開示されたセル数
+- `expGainBoostRatio`: スキル集約から得られるEXPブースト比率
+- `floor`: 小数点以下切り捨て
+
+#### Detonate Combo EXP
+
+管理爆発チェーンによる EXP 獲得量:
+
+```
+comboExp = floor(dangerousMineCellsConverted × baseExpPerCell × comboMultiplier × (1 + expGainBoostRatio))
+```
+
+- `dangerousMineCellsConverted`: 爆発により変換された危険地雷セル数
+- `comboMultiplier`: コンボ倍率（初期値 `progression.comboMultiplierBase = 1.0`、チェーンごとに `+progression.comboMultiplierPerChain = 0.1`）
+
+#### 境界条件
+
+- `revealedCellCount = 0` → `digExp = 0`（ブースト比率に関わらず）
+- `dangerousMineCellsConverted = 0` → `comboExp = 0`（コンボ倍率・ブースト比率に関わらず）
+
+---
+
+### § レベルアップ詳細
+
+#### レベルアップ必要 EXP
+
+レベル `L` からレベル `L+1` に昇格するために必要な EXP:
+
+```
+requiredExp(L) = floor(levelExpBase × levelExpGrowth ^ (L − 1))
+```
+
+- `levelExpBase`: デフォルト `100`
+- `levelExpGrowth`: デフォルト `1.5`（※テストファイルでは 1.3 または 2.0 を使用）
+
+#### レベル進行アルゴリズム
+
+入力: `currentLevel`, `currentExp`, `gainedExp`
+出力: `newLevel`, `totalExp`, `leveledUpCount`
+
+```
+totalExp = currentExp + gainedExp
+leveledUpCount = 0
+newLevel = currentLevel
+
+while totalExp >= requiredExp(newLevel + 1):
+    totalExp -= requiredExp(newLevel + 1)
+    newLevel += 1
+    leveledUpCount += 1
+
+return { newLevel, totalExp, leveledUpCount }
+```
+
+#### 状態遷移モデル
+
+- EXP はフロア遷移時にリセットされない（累積モデル）。
+- 1回の `gainedExp` 加算で複数レベルアップが発生しうる。
+- 余剰 EXP は次のレベルに繰り越される。
+- EXP が次レベルの必要量未満の場合、レベルは変化せず `totalExp` にそのまま保持される。
+
+---
+
+### § フラッドフィル（BFS 開示）詳細
+
+#### 前提条件
+
+- 開示対象は `CellType.SafeMine` のみ。`CellType.DangerousMine`、`CellType.Safe`、その他のセルタイプは開示されない。
+- 開示されたセルは `CellType.SafeMine` から `CellType.Safe` に変換される。
+
+#### アルゴリズム
+
+1. 開始セルが `CellType.SafeMine` でない場合、空の結果を返す（開示なし）。
+2. 開始セルを `Safe` に変換し、開示リストとキューに追加する。
+3. キューから順にセルを取り出す:
+   a. そのセルの `adjacentMineCount ≠ 0` の場合、そのセルからの拡散をスキップする（そのセル自体は既に開示済み）。
+   b. `adjacentMineCount = 0` の場合、8近傍の各セルについて:
+      - セルがグリッド範囲内かつ `CellType.SafeMine` であれば、`Safe` に変換し開示リスト・キューに追加する。
+
+#### 不変条件
+
+- **入力グリッド不変**: 入力として渡されたグリッドは一切変更されない。出力は常にクローン（ディープコピー）されたグリッドである。
+- **冪等性**: 既に `CellType.Safe` のセルを開始点にした場合、開示リストは空で、出力グリッドは入力と等しい（ただし異なるオブジェクト参照）。
+- **DangerousMine 不可侵**: `CellType.DangerousMine` は拡散により開示・変換されることはない。
+- **非ゼロセルの境界性**: `adjacentMineCount > 0` の `SafeMine` セルは開示されるが、そこからの拡散は行われない（境界として機能する）。
+
+#### 境界条件
+
+- 1×1 グリッドの SafeMine: 開始セル 1 つのみ開示。
+- 全近傍が DangerousMine: 開始セル 1 つのみ開示。
+- 全セルが `adjacentMineCount=0` の SafeMine: 全セルが開示される。
+- グリッド端: 座標が `0 ≤ x < width`, `0 ≤ y < height` の範囲外はスキップ（ラッピングなし）。
+
+---
+
+### § 8近傍・4近傍の走査順序
+
+#### 4近傍（getNeighbors4）
+
+走査順序は **N → E → S → W**（時計回り、北起点）:
+
+```
+offsets_4 = [(0,-1), (1,0), (0,1), (-1,0)]
+```
+
+#### 8近傍（getNeighbors8）
+
+走査順序は **N → NE → E → SE → S → SW → W → NW**（時計回り、北起点）:
+
+```
+offsets_8 = [(0,-1), (1,-1), (1,0), (1,1), (0,1), (-1,1), (-1,0), (-1,-1)]
+```
+
+#### 境界処理
+
+- 隣接セルの座標が `0 ≤ x < grid.width` かつ `0 ≤ y < grid.height` の範囲外の場合、その方向は結果に含めない。
+- グリッド端のラッピング（トーラス接続）は行わない。
+
+---
+
+### § AABB コリジョン解決
+
+#### 衝突判定
+
+2 プレイヤー間の衝突は以下の条件で発生する:
+
+```
+overlapX = radius.x × 2 − |right.x − left.x|
+overlapY = radius.y × 2 − |right.y − left.y|
+
+衝突あり ⟺ overlapX > 0 かつ overlapY > 0
+```
+
+- `radius` は全プレイヤー共通の AABB 半径ベクトル `{x, y}`。
+
+#### 解決アルゴリズム
+
+反復法により全ペアの衝突を解消する:
+
+1. 最大反復回数: `max(1, N² × 4)` （N = プレイヤー数）
+2. 各反復で全プレイヤーペ `(i, j)` where `i < j` を評価:
+   a. 衝突なし → スキップ
+   b. **最短軸の選択**: `overlapX ≤ overlapY` の場合は X 軸で押し出し、それ以外は Y 軸で押し出す
+   c. **押し出し方向**: 差分が正なら正方向、負なら負方向。**差分が 0 の場合は正方向（`+1`）を選択**する（決定的タイブレーカー）。
+   d. **押し出し量**: オーバーラップの半分を各プレイヤーに均等分配
+3. 反復中に一切の変更が発生しなかった場合、早期終了する。
+
+#### タイブレーカー規則
+
+- **X 軸 vs Y 軸**: `overlapX ≤ overlapY` → X 軸（X 軸が優先）
+- **完全重複** (`dx=0, dy=0`): X 軸が選択され、direction=+1 → left は左へ、right は右へ分離
+
+#### 出力
+
+- 移動が発生したプレイヤーのみを `Map<sessionId, Vec2>` として返す。
+- 位置が変化しなかったプレイヤーは結果に含まれない。
+
+---
+
+### § ドロップ判定詳細
+
+#### 判定フロー
+
+```
+1. ドロップ判定: rng.nextFloat() を呼び出す
+   - result >= dropRate → ドロップなし (null)
+   - result < dropRate  → アイテム選択へ
+2. アイテム選択（重み付きランダム）:
+   a. itemPool から weight > 0 のエントリのみをフィルタ
+   b. フィルタ結果が空 → ドロップなし (null)
+   c. totalWeight = 全エントリの weight 合計
+   d. totalWeight ≤ 0 → ドロップなし (null)
+   e. roll = rng.nextFloat() × totalWeight を計算
+   f. cumulativeWeight を 0 から加算し、roll < cumulativeWeight となった最初のエントリを選択
+   g. roll がどのエントリでも条件を満たさない場合、最後のエントリをフォールバックとして選択
+3. 選択されたアイテムの定義が itemsConfig に存在しない → エラーを送出
+4. 結果: { itemType: 選択されたアイテムID, stackCount: 1 }
+```
+
+#### RNG 消費パターン
+
+- ドロップ判定失敗時: RNG 1 回消費（ドロップ判定のみ）
+- ドロップ判定成功時: RNG 2 回消費（ドロップ判定 + アイテム選択）
+
+#### deadPlayerExists パラメータ
+
+現時点では `deadPlayerExists` は使用されない（Phase B で経済設計と合わせて実装予定）。TODO(Phase-B): 実装。
+
+---
+
+### § 向き（Facing）解決詳細
+
+#### `resolveFacing8` — 移動ベクトルから Facing8 へのマッピング
+
+入力: `{ previousFacing: Facing8, vx: number, vy: number }`
+出力: `Facing8`
+
+1. **零ベクトル** (`vx === 0 && vy === 0`) → `previousFacing` をそのまま返す（向き不変）
+2. **非零ベクトル** → `atan2(vy, vx)` で角度を算出し、π/4 (45°) ごとのセクターに丸める
+   - セクター計算: `sector = round(atan2(vy, vx) / (π/4))`
+   - 正規化: `normalizedSector = ((sector % 8) + 8) % 8`
+3. セクター→Facing8 対応表（角度基準: 0 = 東、反時計回り）:
+
+| normalizedSector | Facing8 | 角度範囲（概算） |
+|---|---|---|
+| 0 | E | -22.5° ~ 22.5° |
+| 1 | SE | 22.5° ~ 67.5° |
+| 2 | S | 67.5° ~ 112.5° |
+| 3 | SW | 112.5° ~ 157.5° |
+| 4 | W | 157.5° ~ 202.5° |
+| 5 | NW | 202.5° ~ 247.5° |
+| 6 | N | 247.5° ~ 292.5° |
+| 7 | NE | 292.5° ~ 337.5° |
+
+#### `projectFacingToAxis4` — Facing8 から Facing4 への射影
+
+対角線方向を最近接の主方位（cardinal direction）へ射影する:
+
+| 入力 (Facing8) | 出力 (Facing4) |
+|---|---|
+| N, NW | N |
+| NE, E | E |
+| SE, S | S |
+| SW, W | W |
+
+> **設計意図**: 対角線は「右寄り」に射影する（NW→N ではなく N/NW→N、NE→E ではなく NE/E→E）。
+
+---
+
+### § 最前線（Frontline）抽出・選択詳細
+
+#### `extractFrontlineCoords` — 最前線座標の抽出
+
+定義: **安全マス（Safe）のうち、周囲8近傍にハザード（SafeMine / DangerousMine / Wasteland）が存在するマス**
+
+アルゴリズム:
+1. グリッドを線形走査（index 0 → width×height-1）
+2. 各セルが `CellType.Safe` かつ 8近傍にハザードが存在する場合 → frontline に追加
+3. ハザード判定: `isFrontlineHazard(t) = t ∈ {SafeMine, DangerousMine, Wasteland}`
+4. 出力配列は走査順（index 昇順）を保持
+
+#### `selectFrontlineTargets` — 最前線からのターゲット選択
+
+入力: `{ grid, frontline, targetCount, widthCap, rng }`
+出力: `GridCoord[]`（選択された座標リスト）
+
+**事前条件**: `targetCount > 0 && widthCap > 0`。満たさない場合は空配列を返す。
+
+アルゴリズム:
+1. **正規化**: 入力 frontline から既選択・除外済み・非Safeマスを除去
+2. **シード選択**: 正規化済み frontline から `rng.nextInt(frontline.length)` で1マスをランダム選択
+3. **連結成分収集**: シードを起点に、正規化 frontline 内で8近傍連結しているマス群を BFS で収集
+4. **幅制限選択**: 連結成分内でシードからの列（x座標）拡張順に選択:
+   - 列の順序: シード列 → 左1列 → 右1列 → 左2列 → 右2列 → …（交互）
+   - 各列内: シードに最も近い y 座標順（|dy| 昇順、同値時 y 昇順）
+   - 幅制約: 選択範囲の `(maxX - minX + 1) > widthCap` になった時点で打ち切り
+5. **フロントライン更新**: 未選択の現在 frontline メンバーを「除外」マーク
+6. **新 frontline 構築**: 全グリッド再走査で、選択済みでも除外でもない Safe マスのうち、選択済みまたはハザードが8近傍に存在するものを新 frontline とする
+7. **反復**: targetCount に達するか、frontline が空になるか、探索回数が targetCount を超えるまで 2–6 を繰り返し
+
+**不変性**: 入力 grid および frontline は変更しない。
+
+---
+
+### § インベントリ操作詳細
+
+#### スロット選択ポリシー
+
+インベントリ操作は以下の優先順位でスロットを探索する:
+
+1. **スタック可能アイテムの追加** (`addItemToInventory`):
+   - **第一優先**: 同一 itemType を持つスロットを先頭（index 0）から探索 → `stackCount + 追加数 ≤ maxStack` ならそこに加算（`usedNewSlot = false`）
+   - **第二優先**: 空スロット（`itemType === null`）を先頭から探索 → 新規格納（`usedNewSlot = true`）
+   - どちらも見つからない → 失敗（スロット満杯）
+
+2. **スタック不可アイテム** (`stackable = false`):
+   - 常に新規スロットを消費する（既存スタックへの加算を行わない）
+
+3. **`canAddItemToInventory`**:
+   - 上記と同じロジックで可能性を判定のみ行う（状態変更なし）
+
+#### 消費 (`consumeInventorySlot`)
+
+- `count` 指定あり: `stackCount -= count`。結果 ≤ 0 ならスロットクリア（`itemType = null, stackCount = 0`）
+- `count` 省略: スロット全体をクリア
+
+#### 破棄 (`discardInventorySlot`)
+
+- 対象スロットをクリアし、破棄されたアイテム情報（`{ itemType, stackCount }`）を返す
+- 空スロットの破棄はエラー
+
+#### 不変性
+
+すべての操作は**入力 inventory の shallow copy** を作成して操作する。元の inventory オブジェクトは変更しない。
 
 ---
 

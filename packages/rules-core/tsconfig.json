@@ -1,15 +1,15 @@
 {
-	"extends": "../../tsconfig.base.json",
-	"compilerOptions": {
-		"baseUrl": ".",
-		"outDir": "dist",
-		"rootDir": "src",
-		"module": "NodeNext",
-		"moduleResolution": "NodeNext",
-		"paths": {
-			"@detonator/protocol": ["../protocol/dist/index.d.ts"],
-			"@detonator/config": ["../config/dist/index.d.ts"]
-		}
-	},
-	"include": ["src"]
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "baseUrl": ".",
+    "outDir": "dist",
+    "rootDir": "src",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "paths": {
+      "@detonator/protocol": ["../protocol/dist/index.d.ts"],
+      "@detonator/config": ["../config/dist/index.d.ts"]
+    }
+  },
+  "include": ["src"]
 }
