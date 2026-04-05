@@ -16,3 +16,4 @@ export * from "./checkpoint/placement.js";
 export * from "./checkpoint/detection.js";
 export * from "./progression/skill-modifiers.js";
 export * from "./reward/inventory-mutation.js";
+export * from "./detonate/detonate-mst.js";
